@@ -1,0 +1,42 @@
+[
+  {
+    "drug_a": "warfarin",
+    "drug_b": "fluconazole",
+    "severity": "major",
+    "mechanism": "Fluconazole inhibits CYP2C9, the primary enzyme responsible for warfarin metabolism. This reduces warfarin clearance and increases plasma concentrations.",
+    "description": "Fluconazole increases warfarin plasma concentrations by inhibiting CYP2C9-mediated metabolism. INR can rise significantly, increasing bleeding risk.",
+    "source": "database"
+  },
+  {
+    "drug_a": "metformin",
+    "drug_b": "st. john's wort",
+    "severity": "moderate",
+    "mechanism": "St. John's Wort induces CYP3A4 and P-glycoprotein, increasing the metabolic clearance and reducing therapeutic exposure.",
+    "description": "St. John's Wort (Hypericum perforatum) induces hepatic CYP3A4 and intestinal P-gp, which may reduce drug effectiveness and glycemic control.",
+    "source": "literature"
+  },
+  {
+    "drug_a": "tramadol",
+    "drug_b": "sertraline",
+    "severity": "major",
+    "mechanism": "Both tramadol (via mu-opioid activity and serotonin reuptake inhibition) and sertraline (SSRI) increase serotonergic neurotransmission.",
+    "description": "Tramadol has dual mechanisms: opioid agonism and serotonin/norepinephrine reuptake inhibition. Combined with sertraline, the risk of serotonin syndrome increases.",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "aspirin",
+    "severity": "major",
+    "mechanism": "Aspirin inhibits platelet aggregation via COX-1 inhibition and can displace warfarin from plasma protein binding sites.",
+    "description": "The combination of warfarin and aspirin produces additive anticoagulant and antiplatelet effects, significantly increasing bleeding risk.",
+    "source": "database"
+  },
+  {
+    "drug_a": "simvastatin",
+    "drug_b": "clarithromycin",
+    "severity": "major",
+    "mechanism": "Clarithromycin inhibits CYP3A4, the primary enzyme responsible for simvastatin metabolism. This leads to increased statin plasma concentrations.",
+    "description": "CYP3A4 inhibition by clarithromycin causes simvastatin accumulation. The risk of myopathy and rhabdomyolysis is significantly increased.",
+    "source": "database"
+  }
+]

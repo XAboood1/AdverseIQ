@@ -1,0 +1,179 @@
+[
+  {
+    "name": "st. john's wort",
+    "aliases": [
+      "hypericum perforatum",
+      "st johns wort",
+      "saint john's wort"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "CYP3A4 induction",
+      "P-glycoprotein induction"
+    ],
+    "affected_drugs": [
+      "ssri",
+      "anticoagulant",
+      "oral contraceptive",
+      "metformin",
+      "cyclosporine",
+      "antiretroviral"
+    ],
+    "interaction_note": "Strong CYP3A4 and P-gp inducer. Reduces plasma levels of many co-administered drugs."
+  },
+  {
+    "name": "ginkgo biloba",
+    "aliases": [
+      "ginkgo",
+      "gingko"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "platelet inhibition",
+      "PAF antagonism"
+    ],
+    "affected_drugs": [
+      "anticoagulant",
+      "antiplatelet",
+      "nsaid"
+    ],
+    "interaction_note": "Inhibits platelet-activating factor. Increases bleeding risk with anticoagulants and NSAIDs."
+  },
+  {
+    "name": "garlic",
+    "aliases": [
+      "allium sativum"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "CYP2C9 inhibition",
+      "antiplatelet effect"
+    ],
+    "affected_drugs": [
+      "warfarin",
+      "statin"
+    ],
+    "interaction_note": "Inhibits CYP2C9 and has antiplatelet properties. Increases warfarin effect."
+  },
+  {
+    "name": "ginseng",
+    "aliases": [
+      "panax ginseng",
+      "asian ginseng"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "hypoglycemic effect",
+      "CYP3A4 induction"
+    ],
+    "affected_drugs": [
+      "insulin",
+      "metformin",
+      "sulfonylurea"
+    ],
+    "interaction_note": "Has intrinsic hypoglycemic activity. May cause hypoglycemia when combined with diabetes medications."
+  },
+  {
+    "name": "fish oil",
+    "aliases": [
+      "omega-3",
+      "omega 3 fatty acids",
+      "epa",
+      "dha"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "platelet inhibition"
+    ],
+    "affected_drugs": [
+      "anticoagulant",
+      "antiplatelet"
+    ],
+    "interaction_note": "High-dose omega-3 inhibits platelet aggregation. Increases bleeding risk with anticoagulants."
+  },
+  {
+    "name": "echinacea",
+    "aliases": [
+      "echinacea purpurea"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "CYP3A4 inhibition",
+      "immunostimulation"
+    ],
+    "affected_drugs": [
+      "immunosuppressant",
+      "cyclosporine"
+    ],
+    "interaction_note": "May inhibit CYP3A4 and stimulate immune function — counteracts immunosuppressants."
+  },
+  {
+    "name": "saw palmetto",
+    "aliases": [
+      "serenoa repens"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "5-alpha reductase inhibition",
+      "antiandrogen"
+    ],
+    "affected_drugs": [
+      "finasteride",
+      "hormone therapy"
+    ],
+    "interaction_note": "5-alpha reductase inhibition may have additive effect with finasteride and hormone therapies."
+  },
+  {
+    "name": "ginger",
+    "aliases": [
+      "zingiber officinale"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "platelet inhibition",
+      "COX inhibition"
+    ],
+    "affected_drugs": [
+      "anticoagulant",
+      "antiplatelet",
+      "nsaid"
+    ],
+    "interaction_note": "Inhibits platelet aggregation and thromboxane synthesis. Increases bleeding risk."
+  },
+  {
+    "name": "green tea",
+    "aliases": [
+      "camellia sinensis",
+      "egcg"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "CYP2C9 inhibition",
+      "vitamin K content"
+    ],
+    "affected_drugs": [
+      "warfarin"
+    ],
+    "interaction_note": "EGCG inhibits CYP2C9 and high vitamin K content can antagonize warfarin's anticoagulant effect."
+  },
+  {
+    "name": "turmeric",
+    "aliases": [
+      "curcumin",
+      "curcuma longa"
+    ],
+    "is_herb": true,
+    "mechanisms": [
+      "CYP3A4 inhibition",
+      "CYP2C9 inhibition",
+      "antiplatelet"
+    ],
+    "affected_drugs": [
+      "anticoagulant",
+      "antiplatelet",
+      "statin",
+      "chemotherapy"
+    ],
+    "interaction_note": "Inhibits multiple CYP enzymes and has antiplatelet properties. Increases levels of many co-administered drugs."
+  }
+]

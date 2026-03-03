@@ -1,0 +1,198 @@
+{
+  "warfarin": {
+    "strategy": "rapid",
+    "urgency": "urgent",
+    "urgency_reason": "Two or more antihaemostatic agents with bleeding symptoms. INR/CBC monitoring required.",
+    "interaction_found": true,
+    "mechanism": "Fluconazole inhibits CYP2C9, the primary enzyme responsible for warfarin (S-enantiomer) metabolism, reducing clearance and increasing anticoagulant effect.",
+    "symptom_match": true,
+    "causal_steps": [
+      {
+        "step": 1,
+        "mechanism": "Fluconazole inhibits CYP2C9 enzyme activity",
+        "expected_finding": "Reduced metabolic clearance of warfarin",
+        "evidence": "Fluconazole is a CYP2C9 inhibitor; inhibition can increase warfarin exposure.",
+        "source": "database"
+      },
+      {
+        "step": 2,
+        "mechanism": "CYP2C9 inhibition reduces S-warfarin metabolism",
+        "expected_finding": "Elevated S-warfarin plasma concentration",
+        "evidence": "S-warfarin is more potent than R-warfarin, so increased S-warfarin increases anticoagulation risk.",
+        "source": "database"
+      },
+      {
+        "step": 3,
+        "mechanism": "Elevated warfarin levels increase PT/INR above therapeutic range",
+        "expected_finding": "INR elevation with bruising/bleeding risk",
+        "evidence": "INR increases are commonly observed within days after starting an interacting azole antifungal.",
+        "source": "database"
+      }
+    ],
+    "overall_confidence": 95,
+    "confidence_factors": [
+      { "factor": "Known database interaction found", "direction": "increases" },
+      { "factor": "Mechanism pharmacologically plausible", "direction": "increases" },
+      { "factor": "Timing consistent with interaction onset", "direction": "increases" }
+    ],
+    "recommendation": "Consider reducing warfarin dose during fluconazole therapy and monitor INR frequently until stable. Escalate care if significant bleeding occurs.",
+    "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
+    "db_interaction": {
+      "drug_a": "warfarin",
+      "drug_b": "fluconazole",
+      "severity": "major",
+      "mechanism": "Fluconazole inhibits CYP2C9 reducing warfarin clearance",
+      "source": "database"
+    }
+  },
+  "stjohnswort": {
+    "strategy": "hypothesis",
+    "urgency": "urgent",
+    "urgency_reason": "Possible herb–drug interaction with reduced therapeutic effect and hyperglycemia risk.",
+    "hypotheses": [
+      {
+        "id": "H1",
+        "description": "St. John's Wort induction effects reducing metformin exposure or effectiveness",
+        "mechanism": "St. John's Wort induces CYP3A4 and P-glycoprotein pathways; broad induction can reduce exposure of some co-administered drugs and worsen control in susceptible patients.",
+        "confidence": 78,
+        "supporting_evidence": [
+          "St. John's Wort is a well-characterized CYP3A4 and P-gp inducer",
+          "Temporal correlation with symptom onset after herb initiation",
+          "Literature contains reports of clinically relevant herb–drug interactions"
+        ],
+        "rejecting_evidence": [],
+        "status": "supported",
+        "evidence_source": "literature",
+        "pubmed_refs": ["31245678"]
+      },
+      {
+        "id": "H2",
+        "description": "Lisinopril causing hyperglycemia",
+        "mechanism": "ACE inhibitors generally do not cause clinically significant hyperglycemia.",
+        "confidence": 12,
+        "supporting_evidence": [],
+        "rejecting_evidence": [
+          "Not a typical effect of lisinopril",
+          "Timing does not fit if lisinopril was long-standing"
+        ],
+        "status": "rejected",
+        "evidence_source": "mechanism",
+        "pubmed_refs": []
+      },
+      {
+        "id": "H3",
+        "description": "Atorvastatin-induced insulin resistance",
+        "mechanism": "Statins can modestly affect glycemia in some patients, typically gradually.",
+        "confidence": 18,
+        "supporting_evidence": ["Statins have an association with dysglycemia in some populations"],
+        "rejecting_evidence": [
+          "Often slower onset",
+          "If stable on atorvastatin previously, less likely to explain an acute change"
+        ],
+        "status": "rejected",
+        "evidence_source": "literature",
+        "pubmed_refs": []
+      },
+      {
+        "id": "H4",
+        "description": "Disease progression (worsening type 2 diabetes)",
+        "mechanism": "Natural progression can worsen control, usually over months/years.",
+        "confidence": 10,
+        "supporting_evidence": [],
+        "rejecting_evidence": [
+          "Abrupt timing favors an external trigger",
+          "Temporal link with herb initiation"
+        ],
+        "status": "rejected",
+        "evidence_source": "mechanism",
+        "pubmed_refs": []
+      },
+      {
+        "id": "H5",
+        "description": "Non-adherence to metformin",
+        "mechanism": "Missed doses reduce therapeutic exposure.",
+        "confidence": 8,
+        "supporting_evidence": [],
+        "rejecting_evidence": [
+          "No reported adherence issues",
+          "Does not explain herb-specific timing"
+        ],
+        "status": "rejected",
+        "evidence_source": "mechanism",
+        "pubmed_refs": []
+      }
+    ],
+    "top_hypothesis": "H1",
+    "rejected_hypotheses": ["H2", "H3", "H4", "H5"],
+    "overall_confidence": 78,
+    "confidence_factors": [
+      { "factor": "PubMed literature supports hypothesis", "direction": "increases" },
+      { "factor": "Temporal onset correlates with herb initiation", "direction": "increases" },
+      { "factor": "Mechanism pharmacologically plausible", "direction": "increases" }
+    ],
+    "recommendation": "Stop St. John's Wort and monitor glucose closely. Reassess medication plan and investigate other causes if hyperglycemia persists.",
+    "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
+    "db_interaction": null
+  },
+  "serotonin": {
+    "strategy": "hypothesis",
+    "urgency": "emergent",
+    "urgency_reason": "Multiple serotonergic drugs (tramadol, sertraline) with symptoms consistent with serotonin toxicity risk.",
+    "hypotheses": [
+      {
+        "id": "H1",
+        "description": "Serotonin toxicity from combined tramadol and sertraline serotonergic load",
+        "mechanism": "Tramadol has serotonergic reuptake inhibition; sertraline is an SSRI. Combined serotonergic activity increases serotonin toxicity risk.",
+        "confidence": 92,
+        "supporting_evidence": [
+          "Tramadol + SSRI combination is a known risk for serotonin toxicity",
+          "Symptom cluster can match serotonin toxicity",
+          "Published case reports exist"
+        ],
+        "rejecting_evidence": [],
+        "status": "supported",
+        "evidence_source": "database",
+        "pubmed_refs": ["28734521", "31562890"]
+      },
+      {
+        "id": "H2",
+        "description": "Influenza or viral illness",
+        "mechanism": "Viral infection can cause fever and confusion, but does not strongly explain the full picture when serotonergic polypharmacy exists.",
+        "confidence": 8,
+        "supporting_evidence": ["Fever and confusion can occur in viral illness"],
+        "rejecting_evidence": [
+          "Medication combination provides a stronger pharmacological explanation",
+          "Key features may be atypical for a simple viral illness"
+        ],
+        "status": "rejected",
+        "evidence_source": "mechanism",
+        "pubmed_refs": []
+      },
+      {
+        "id": "H3",
+        "description": "Neuroleptic malignant syndrome",
+        "mechanism": "Typically requires dopamine antagonist exposure; not supported if no causative agents present.",
+        "confidence": 5,
+        "supporting_evidence": ["Some overlap of symptoms"],
+        "rejecting_evidence": [
+          "No dopamine-blocking agent reported",
+          "Medication list favors serotonergic mechanism"
+        ],
+        "status": "rejected",
+        "evidence_source": "mechanism",
+        "pubmed_refs": []
+      }
+    ],
+    "top_hypothesis": "H1",
+    "rejected_hypotheses": ["H2", "H3"],
+    "overall_confidence": 92,
+    "confidence_factors": [
+      { "factor": "Known interaction risk pattern", "direction": "increases" },
+      { "factor": "Mechanism pharmacologically established", "direction": "increases" },
+      { "factor": "Literature supports combination risk", "direction": "increases" }
+    ],
+    "recommendation": "Urgent evaluation is recommended if serotonin toxicity is suspected. Review serotonergic medications and seek immediate clinical assessment based on severity.",
+    "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
+    "db_interaction": null
+  }
+}

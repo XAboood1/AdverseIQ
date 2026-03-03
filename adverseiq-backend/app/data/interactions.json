@@ -1,0 +1,162 @@
+[
+  {
+    "drug_a": "warfarin",
+    "drug_b": "fluconazole",
+    "severity": "major",
+    "mechanism": "Fluconazole inhibits CYP2C9, the primary enzyme responsible for warfarin metabolism. This reduces warfarin clearance and increases plasma concentrations.",
+    "description": "Fluconazole increases warfarin plasma concentrations by inhibiting CYP2C9-mediated metabolism. INR can rise significantly, increasing bleeding risk.",
+    "source": "database"
+  },
+  {
+    "drug_a": "metformin",
+    "drug_b": "st. john's wort",
+    "severity": "moderate",
+    "mechanism": "St. John's Wort induces CYP3A4 and P-glycoprotein, increasing the metabolic clearance and reducing therapeutic exposure.",
+    "description": "St. John's Wort (Hypericum perforatum) induces hepatic CYP3A4 and intestinal P-gp, which may reduce drug effectiveness and glycemic control.",
+    "source": "literature"
+  },
+  {
+    "drug_a": "tramadol",
+    "drug_b": "sertraline",
+    "severity": "major",
+    "mechanism": "Both tramadol (via mu-opioid activity and serotonin reuptake inhibition) and sertraline (SSRI) increase serotonergic neurotransmission.",
+    "description": "Tramadol has dual mechanisms: opioid agonism and serotonin/norepinephrine reuptake inhibition. Combined with sertraline, the risk of serotonin syndrome increases.",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "aspirin",
+    "severity": "major",
+    "mechanism": "Aspirin inhibits platelet aggregation via COX-1 inhibition and can displace warfarin from plasma protein binding sites.",
+    "description": "The combination of warfarin and aspirin produces additive anticoagulant and antiplatelet effects, significantly increasing bleeding risk.",
+    "source": "database"
+  },
+  {
+    "drug_a": "simvastatin",
+    "drug_b": "clarithromycin",
+    "severity": "major",
+    "mechanism": "Clarithromycin inhibits CYP3A4, the primary enzyme responsible for simvastatin metabolism. This leads to increased statin plasma concentrations.",
+    "description": "CYP3A4 inhibition by clarithromycin causes simvastatin accumulation. The risk of myopathy and rhabdomyolysis is significantly increased.",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "atorvastatin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Table 2: Examples of CYP450 Interactions with Warfarin Enzyme Inhibitors Inducers CYP2C9 amiodarone, capecitabine, cotrimoxazole, etravirine, fluconazole, fluvastatin, fluvoxamine, metronidazole, miconazole, oxandrolone, sulfinpyrazone, tigecycline, voriconazole, zafirlukast aprepitant, bosentan, carbamazepine, phenobarbital, rifampin CYP1A2 acyclovir, allopurinol, caffeine, cimetidine, ciprofloxacin, disulfiram, enoxacin, famotidine, fluvoxamine, methoxsalen, mexiletine, norfloxacin, oral contraceptives, phenylpropanolamine, propafenone, propranolol, terbinafine, thiabendazole, ticlopidine, verapamil, zileuton montelukast, moricizine, omeprazole, phenobarbital, phenytoin, cigarette smoking CYP3A4 alprazolam, amiodarone, amlodipine, amprenavir, aprepitant, atorvastatin, atazanavir, bicalutamide, cilostazol, cimetidine, ciprofloxacin, clarithromycin, conivaptan, cyclosporine, darunavir/ritonavir, diltiazem, erythromycin, fluconazole, fluoxetine, fluvoxamine, fosamprenavir, imatinib, indinavir, isoniazid, itraconazole, ketoconazole, lopinavir/ritonavir, nefazodone, nelfinavir, nilotinib, oral contraceptives, posaconazole, ranitidine, ranolazine, ritonavir, saquinavir, telithromycin, tipranavir, voriconazole, zileuton armodafinil, amprenavir, aprepitant, bosentan, carbamazepine, efavirenz, etravirine, modafinil, nafcillin, phenytoin, pioglitazone, prednisone, rifampin, rufinamide 7.3 Drugs that Increase Bleeding Risk Examples of drugs known to increase the risk of bleeding are presented in Table 3 .",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "clarithromycin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Table 2: Examples of CYP450 Interactions with Warfarin Enzyme Inhibitors Inducers CYP2C9 amiodarone, capecitabine, cotrimoxazole, etravirine, fluconazole, fluvastatin, fluvoxamine, metronidazole, miconazole, oxandrolone, sulfinpyrazone, tigecycline, voriconazole, zafirlukast aprepitant, bosentan, carbamazepine, phenobarbital, rifampin CYP1A2 acyclovir, allopurinol, caffeine, cimetidine, ciprofloxacin, disulfiram, enoxacin, famotidine, fluvoxamine, methoxsalen, mexiletine, norfloxacin, oral contraceptives, phenylpropanolamine, propafenone, propranolol, terbinafine, thiabendazole, ticlopidine, verapamil, zileuton montelukast, moricizine, omeprazole, phenobarbital, phenytoin, cigarette smoking CYP3A4 alprazolam, amiodarone, amlodipine, amprenavir, aprepitant, atorvastatin, atazanavir, bicalutamide, cilostazol, cimetidine, ciprofloxacin, clarithromycin, conivaptan, cyclosporine, darunavir/ritonavir, diltiazem, erythromycin, fluconazole, fluoxetine, fluvoxamine, fosamprenavir, imatinib, indinavir, isoniazid, itraconazole, ketoconazole, lopinavir/ritonavir, nefazodone, nelfinavir, nilotinib, oral contraceptives, posaconazole, ranitidine, ranolazine, ritonavir, saquinavir, telithromycin, tipranavir, voriconazole, zileuton armodafinil, amprenavir, aprepitant, bosentan, carbamazepine, efavirenz, etravirine, modafinil, nafcillin, phenytoin, pioglitazone, prednisone, rifampin, rufinamide 7.3 Drugs that Increase Bleeding Risk Examples of drugs known to increase the risk of bleeding are presented in Table 3 .",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "sertraline",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Table 3: Drugs that Can Increase the Risk of Bleeding Drug Class Specific Drugs Anticoagulants argatroban, dabigatran, bivalirudin, desirudin, heparin, lepirudin Antiplatelet Agents aspirin, cilostazol, clopidogrel, dipyridamole, prasugrel, ticlopidine Non-steroidal Anti-Inflammatory Agents celecoxib, diclofenac, diflunisal, fenoprofen, ibuprofen, indomethacin, ketoprofen, ketorolac, mefenamic acid, naproxen, oxaprozin, piroxicam, sulindac Serotonin Reuptake Inhibitors citalopram, desvenlafaxine, duloxetine, escitalopram, fluoxetine, fluvoxamine, milnacipran, paroxetine, sertraline, venlafaxine, vilazodone 7.4 Antibiotics and Antifungals There have been reports of changes in INR in patients taking warfarin and antibiotics or antifungals, but clinical pharmacokinetic studies have not shown consistent effects of these agents on plasma concentrations of warfarin.",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "ibuprofen",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Table 3: Drugs that Can Increase the Risk of Bleeding Drug Class Specific Drugs Anticoagulants argatroban, dabigatran, bivalirudin, desirudin, heparin, lepirudin Antiplatelet Agents aspirin, cilostazol, clopidogrel, dipyridamole, prasugrel, ticlopidine Non-steroidal Anti-Inflammatory Agents celecoxib, diclofenac, diflunisal, fenoprofen, ibuprofen, indomethacin, ketoprofen, ketorolac, mefenamic acid, naproxen, oxaprozin, piroxicam, sulindac Serotonin Reuptake Inhibitors citalopram, desvenlafaxine, duloxetine, escitalopram, fluoxetine, fluvoxamine, milnacipran, paroxetine, sertraline, venlafaxine, vilazodone 7.4 Antibiotics and Antifungals There have been reports of changes in INR in patients taking warfarin and antibiotics or antifungals, but clinical pharmacokinetic studies have not shown consistent effects of these agents on plasma concentrations of warfarin.",
+    "source": "database"
+  },
+  {
+    "drug_a": "warfarin",
+    "drug_b": "clopidogrel",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Table 3: Drugs that Can Increase the Risk of Bleeding Drug Class Specific Drugs Anticoagulants argatroban, dabigatran, bivalirudin, desirudin, heparin, lepirudin Antiplatelet Agents aspirin, cilostazol, clopidogrel, dipyridamole, prasugrel, ticlopidine Non-steroidal Anti-Inflammatory Agents celecoxib, diclofenac, diflunisal, fenoprofen, ibuprofen, indomethacin, ketoprofen, ketorolac, mefenamic acid, naproxen, oxaprozin, piroxicam, sulindac Serotonin Reuptake Inhibitors citalopram, desvenlafaxine, duloxetine, escitalopram, fluoxetine, fluvoxamine, milnacipran, paroxetine, sertraline, venlafaxine, vilazodone 7.4 Antibiotics and Antifungals There have been reports of changes in INR in patients taking warfarin and antibiotics or antifungals, but clinical pharmacokinetic studies have not shown consistent effects of these agents on plasma concentrations of warfarin.",
+    "source": "database"
+  },
+  {
+    "drug_a": "fluconazole",
+    "drug_b": "atorvastatin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "HMG-CoA reductase inhibitors : The risk of myopathy and rhabdomyolysis increases when fluconazole is coadministered with HMG-CoA reductase inhibitors metabolized through CYP3A4, such as atorvastatin and simvastatin, or through CYP2C9, such as fluvastatin.",
+    "source": "database"
+  },
+  {
+    "drug_a": "fluconazole",
+    "drug_b": "simvastatin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "HMG-CoA reductase inhibitors : The risk of myopathy and rhabdomyolysis increases when fluconazole is coadministered with HMG-CoA reductase inhibitors metabolized through CYP3A4, such as atorvastatin and simvastatin, or through CYP2C9, such as fluvastatin.",
+    "source": "database"
+  },
+  {
+    "drug_a": "fluconazole",
+    "drug_b": "ibuprofen",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Similarly, the C max and AUC of the pharmacologically active isomer [S-(+)-ibuprofen] were increased by 15% and 82%, respectively, when fluconazole was coadministered with racemic ibuprofen (400 mg) compared to administration of racemic ibuprofen alone.",
+    "source": "database"
+  },
+  {
+    "drug_a": "sertraline",
+    "drug_b": "aspirin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Drugs that Interfere with Hemostasis (Non-selective NSAIDs, Aspirin, Warfarin, etc.) Serotonin release by platelets plays an important role in hemostasis.",
+    "source": "database"
+  },
+  {
+    "drug_a": "sertraline",
+    "drug_b": "clopidogrel",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Examples: aspirin, clopidogrel, heparin, warfarin Drugs Highly Bound to Plasma Protein Clinical Impact: Sertraline hydrochloride is highly bound to plasma protein.",
+    "source": "database"
+  },
+  {
+    "drug_a": "tramadol",
+    "drug_b": "warfarin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Warfarin Clinical Impact: Post-marketing surveillance of tramadol has revealed rare reports of alteration of warfarin effect, including elevation of prothrombin times.",
+    "source": "database"
+  },
+  {
+    "drug_a": "atorvastatin",
+    "drug_b": "clarithromycin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Intervention: In patients taking clarithromycin or itraconazole, do not exceed atorvastatin 20 mg [see Dosage and Administration (2.5) ].",
+    "source": "database"
+  },
+  {
+    "drug_a": "simvastatin",
+    "drug_b": "warfarin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "There are postmarketing reports of clinically evident bleeding and/or increased INR in patients taking concomitant statins and warfarin.",
+    "source": "database"
+  },
+  {
+    "drug_a": "clarithromycin",
+    "drug_b": "fluconazole",
+    "severity": "major",
+    "mechanism": "",
+    "description": "Fluconazole No Dose Adjustment Fluconazole: [see Pharmacokinetics ( 12.3 )] Anti-Gout Agents: Colchicine (in patients with renal or hepatic impairment) Contraindicated Colchicine: Colchicine is a substrate for both CYP3A and the efflux transporter, P-glycoprotein (Pgp).",
+    "source": "database"
+  },
+  {
+    "drug_a": "ibuprofen",
+    "drug_b": "aspirin",
+    "severity": "minor",
+    "mechanism": "",
+    "description": "Preexisting asthma Patients with asthma may have aspirin-sensitive asthma.",
+    "source": "database"
+  }
+]
