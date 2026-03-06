@@ -17,6 +17,9 @@ services:
       - key: K2_BASE_URL
         value: https://api.k2think.ai/v1
 
+      - key: K2_MODEL
+        value: MBZUAI-IFM/K2-Think-v2
+
       - key: K2_BUILD_URL
         value: https://build-api.k2think.ai/v1
 
