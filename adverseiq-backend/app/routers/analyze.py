@@ -20,6 +20,7 @@ class AnalysisRequest(BaseModel):
     symptoms: list[dict[str, Any]]
     patientContext: Optional[dict[str, Any]] = None
     strategy: str  # "rapid" | "mechanism" | "hypothesis"
+    recentlyAdded: Optional[str] = None  # generic name of drug recently added/changed
 
 
 @router.post("/analyze")

@@ -1,9 +1,40 @@
+"""
+app/services/analysis.py
+
+Analysis orchestrator for all three strategies.
+
+DESIGN PRINCIPLE — K2 is the source of truth for all clinical outputs:
+  - urgency level        → comes from K2; rule-based assessor only escalates,
+                           never downgrades (K2 saying emergent is always kept)
+  - urgency_reason       → comes from K2 directly
+  - confidence score     → comes from K2; logprob calibration discounts it when
+                           K2 was uncertain; rule-based factors only used as
+                           fallback annotation when logprobs unavailable
+  - recommendation       → comes from K2; "Consult a pharmacist" only if K2
+                           returned nothing
+  - safe_alternative     → K2 generates this; static lookup is code fallback
+                           only if the K2 call fails
+
+  Code-side logic (urgency escalation, confidence adjustment, tree building)
+  exists to catch K2 failures and fill gaps — not to replace K2's judgment.
+
+Strategies:
+  Rapid Check     → K2StandardClient — single call, JSON repair
+  Mechanism Trace → K2StandardClient — single call, JSON repair
+  Mystery Solver  → K2AgenticClient  — agent loop, tool calling, JSON mode,
+                                        logprobs calibration
+"""
+
 import json
 import logging
 from pathlib import Path
 from typing import AsyncIterator, Optional, Any
 
-from app.core.k2_client import k2_client, K2Client
+from app.core.k2_client import (
+    k2_client,
+    k2_build_client,
+    _calibrate_confidence_with_logprobs,
+)
 from app.services.drug_lookup import drug_lookup
 from app.services.pubmed_client import pubmed_client
 from app.services.urgency import urgency_assessor
@@ -13,677 +44,742 @@ from app.services.confidence import confidence_engine
 logger = logging.getLogger(__name__)
 
 FALLBACKS_PATH = Path("app/data/demo_fallbacks.json")
+CYP_PATH = Path("app/data/cyp_profiles.json")
+CLASSES_PATH = Path("app/data/drug_classes.json")
 
 DISCLAIMER = (
     "This is clinical decision support, not a substitute for medical judgment. "
     "Confirm all findings clinically before acting."
 )
 
+# Urgency level ordering — used to ensure escalation never downgrades
+_URGENCY_RANK = {"routine": 0, "urgent": 1, "emergent": 2}
 
-def _load_fallback(case_id: str) -> Optional[dict[str, Any]]:
+# ── Static data ───────────────────────────────────────────────────────────────
+
+_cyp_profiles: dict = {}
+_drug_classes: dict = {}
+
+# Static safe alternatives — CODE FALLBACK ONLY.
+# Used only when the K2 safe alternative call fails entirely.
+# Keys: (drug_to_replace, interacting_drug) — order-insensitive via _static_alt()
+_static_alt_fallbacks: dict = {
+    ("fluconazole", "warfarin"): (
+        "Consider topical clotrimazole or miconazole for superficial fungal infections "
+        "(minimal systemic absorption, negligible CYP2C9 inhibition). "
+        "If a systemic antifungal is required, terbinafine carries lower CYP2C9 "
+        "inhibition risk. If fluconazole is unavoidable, reduce warfarin dose "
+        "by 30–50% and monitor INR every 2–3 days until stable."
+    ),
+    ("st. john's wort", "metformin"): (
+        "Discontinue St. John's Wort immediately. For mood support without CYP3A4 "
+        "induction, refer for CBT or discuss a conventional antidepressant with the "
+        "prescriber — noting that SSRIs in diabetic patients require glucose monitoring."
+    ),
+    ("tramadol", "sertraline"): (
+        "Replace tramadol with a non-serotonergic analgesic: acetaminophen for "
+        "mild-to-moderate pain, or a short-course NSAID if no GI/renal contraindication. "
+        "Avoid all opioids with serotonergic properties in any patient on an SSRI or SNRI."
+    ),
+}
+
+
+def _load_static_data():
+    global _cyp_profiles, _drug_classes
     try:
-        fallbacks = json.loads(FALLBACKS_PATH.read_text(encoding="utf-8"))
-        return fallbacks.get(case_id)
+        if CYP_PATH.exists():
+            _cyp_profiles = json.loads(CYP_PATH.read_text())
+    except Exception as exc:
+        logger.warning(f"Could not load cyp_profiles.json: {exc}")
+    try:
+        if CLASSES_PATH.exists():
+            _drug_classes = json.loads(CLASSES_PATH.read_text())
+    except Exception as exc:
+        logger.warning(f"Could not load drug_classes.json: {exc}")
+
+
+_load_static_data()
+
+
+def _load_fallback(case_id: str) -> Optional[dict]:
+    try:
+        return json.loads(FALLBACKS_PATH.read_text()).get(case_id)
     except Exception:
         return None
 
 
-def _format_patient_context(patient_context: Optional[dict[str, Any]]) -> str:
-    """
-    Convert patient context dict into evidence-grounded clinical modifier text
-    for injection into K2 prompts. Every modifier references a specific mechanism
-    or published guideline so K2's reasoning is anchored to real evidence.
-    """
-    if not patient_context:
-        return "None provided — apply standard adult pharmacokinetic assumptions."
-
-    lines = []
-    age = patient_context.get("age")
-    sex = patient_context.get("sex")
-    renal = patient_context.get("renalImpairment")
-    hepatic = patient_context.get("hepaticImpairment")
-    pregnant = patient_context.get("pregnant")
-
-    if age is not None:
-        try:
-            age_int = int(age)
-            if age_int >= 65:
-                lines.append(
-                    f"Age {age_int} (elderly): Renal clearance declines ~1 mL/min/year after age 40 "
-                    "(Cockcroft-Gault). CYP450 hepatic activity reduced 20–40% (Klotz 2009, Clin Pharmacokinet). "
-                    "Lower serum albumin → higher free fraction of highly protein-bound drugs (warfarin, NSAIDs, phenytoin). "
-                    "Polypharmacy amplifies interaction risk. "
-                    "IMPLICATION: escalate interaction severity one tier; narrow therapeutic index drugs require tighter monitoring."
-                )
-            elif age_int < 18:
-                lines.append(
-                    f"Age {age_int} (pediatric): CYP3A4 reaches adult activity ~12 years; CYP2D6 ~5 years. "
-                    "Weight-based dosing required. Immature blood-brain barrier increases CNS drug penetration. "
-                    "IMPLICATION: cite pediatric-specific literature where available; interaction severity unpredictable."
-                )
-            else:
-                lines.append(f"Age {age_int}: Standard adult pharmacokinetics apply.")
-        except (TypeError, ValueError):
-            pass
-
-    if sex:
-        sex_lower = str(sex).lower()
-        if sex_lower in ("female", "f", "woman"):
-            lines.append(
-                "Sex (female): CYP3A4 activity ~20% lower than males (Walsky et al., Drug Metab Dispos 2004). "
-                "Higher baseline QTc → greater torsades risk with QT-prolonging drug combinations (Makkar et al., Ann Intern Med 1993). "
-                "Higher body fat % → larger Vd for lipophilic drugs. "
-                "IMPLICATION: flag QT-prolonging combinations with increased severity; account for Vd differences in dosing."
-            )
-        elif sex_lower in ("male", "m", "man"):
-            lines.append(
-                "Sex (male): Higher CYP1A2 and CYP2E1 activity vs. females. Standard Vd assumptions apply for most drugs."
-            )
-
-    if renal:
-        renal_map = {
-            "mild": (
-                "Renal impairment (mild, eGFR 60–89 mL/min/1.73m²): modest accumulation of renally-cleared drugs. "
-                "Extend dosing intervals for drugs where renal clearance >50% of total clearance. "
-                "Evidence: FDA Guidance for Pharmacokinetics in Renal Impairment (2010). "
-                "IMPLICATION: monitor drug levels for narrow TI renally-cleared drugs."
-            ),
-            "moderate": (
-                "Renal impairment (moderate, eGFR 30–59 mL/min/1.73m²): significant accumulation. "
-                "Dose reduction required for: digoxin (FDA label), metformin (contraindicated eGFR<30), "
-                "gabapentin/pregabalin (dose-adjusted per label), NSAIDs (risk of AKI and reduced prostaglandin-mediated GFR). "
-                "Active metabolite accumulation (morphine-6-glucuronide, normeperidine) amplifies toxicity. "
-                "Evidence: BNF Appendix 3; Cockcroft DW & Gault MH, Nephron 1976. "
-                "IMPLICATION: any interaction involving renally-cleared substrates is amplified — escalate severity."
-            ),
-            "severe": (
-                "Renal impairment (severe, eGFR <30 mL/min/1.73m²): critical accumulation. "
-                "Most renally-cleared drugs require ≥50% dose reduction or are contraindicated (metformin, NSAIDs, NOACs). "
-                "NOAC active metabolite accumulation (dabigatran 80% renal) and morphine-6-glucuronide reach toxic levels. "
-                "Evidence: KDIGO 2012 CKD Guidelines; product-specific FDA labelling. "
-                "IMPLICATION: any interaction involving a renally-cleared substrate must be classified urgent or emergent."
-            ),
-        }
-        lines.append(renal_map.get(str(renal).lower(), f"Renal impairment ({renal}): apply dose adjustment per current eGFR."))
-
-    if hepatic:
-        hepatic_map = {
-            "mild": (
-                "Hepatic impairment (mild, Child-Pugh A, score 5–6): first-pass extraction reduced for high-extraction drugs "
-                "(propranolol, morphine, lidocaine — bioavailability increases 2–3×). CYP450 mildly reduced. "
-                "Evidence: FDA Guidance for Industry — Pharmacokinetics in Hepatic Impairment (2003)."
-            ),
-            "moderate": (
-                "Hepatic impairment (moderate, Child-Pugh B, score 7–9): CYP2C9, CYP3A4, CYP1A2 activity reduced 40–60% "
-                "(Verbeeck RK, Eur J Clin Pharmacol 2008). Albumin synthesis reduced → higher free warfarin, phenytoin, NSAIDs. "
-                "Interactions involving narrow TI CYP substrates (warfarin, phenytoin, cyclosporine) are substantially amplified. "
-                "IMPLICATION: escalate interactions involving CYP-metabolized narrow TI drugs by one severity tier."
-            ),
-            "severe": (
-                "Hepatic impairment (severe, Child-Pugh C, score 10–15): CYP450 activity near-absent; coagulation factor synthesis "
-                "severely impaired (PT/INR unreliable). All hepatically-metabolized drugs accumulate critically. "
-                "Warfarin anticoagulant effect unpredictable and dangerous. Encephalopathy risk with CNS-active drugs. "
-                "Evidence: Child-Pugh scoring; EASL Clinical Practice Guidelines on Liver Disease. "
-                "IMPLICATION: any interaction involving a hepatically-metabolized drug must be classified emergent."
-            ),
-        }
-        lines.append(hepatic_map.get(str(hepatic).lower(), f"Hepatic impairment ({hepatic}): apply Child-Pugh-based dose adjustments."))
-
-    if pregnant:
-        lines.append(
-            "Pregnancy: CYP3A4 and CYP2D6 activity increased (lower plasma concentrations of substrates). "
-            "CYP1A2 and CYP2C19 activity decreased (higher plasma concentrations). "
-            "Plasma volume expanded 40–50% by third trimester → lower peak concentrations of water-soluble drugs. "
-            "Fetal exposure is ALWAYS a co-risk factor: teratogenic/fetotoxic drugs require emergent classification regardless of "
-            "interaction severity in non-pregnant adults — warfarin (fetal warfarin syndrome, Hall JG et al.), "
-            "NSAIDs after 30 weeks (premature ductus arteriosus closure), ACE inhibitors (neonatal renal failure), "
-            "SSRIs (neonatal adaptation syndrome, FDA 2011 safety communication). "
-            "Evidence: Briggs GG, Drugs in Pregnancy and Lactation (12th ed.); ACOG Practice Bulletins; FDA PLLR labelling."
-        )
-
-    return "\n".join(lines) if lines else "No patient-specific modifiers provided."
-
-
-# ------------------------------------------------------------------ #
-# Prompt builders
-# ------------------------------------------------------------------ #
-def _build_rapid_check_prompt(
-    drug_a: str,
-    drug_b: str,
-    known_interaction: Optional[dict[str, Any]],
-    symptom: str,
-    patient_context: Optional[dict[str, Any]] = None,
-) -> tuple[str, str]:
-    system = (
-        "You are a clinical pharmacology expert. Your task is narrow and specific: "
-        "confirm or refute whether a known drug interaction is consistent with a patient symptom, "
-        "taking into account the patient's specific risk modifiers (renal/hepatic function, age, sex, pregnancy). "
-        "Every claim about the interaction mechanism or risk modification must reference a specific "
-        "pharmacological mechanism, FDA label, or published guideline. "
-        "Return ONLY valid JSON with no preamble, explanation, or markdown. "
-        "Do not wrap the JSON in code fences. Do not add any text before or after the JSON object. "
-        "Use only double-quoted string values. Do not use Python literals (True/False/None)."
+def _static_alt(drug_a: str, drug_b: str) -> Optional[str]:
+    """Order-insensitive lookup in the static fallback table."""
+    return (
+        _static_alt_fallbacks.get((drug_a, drug_b))
+        or _static_alt_fallbacks.get((drug_b, drug_a))
     )
 
+
+def _resolve_urgency(k2_urgency: Optional[str], generic_names: list, symptom_texts: list) -> tuple[str, str]:
+    """
+    Resolve final urgency using K2 as primary source.
+
+    Rules:
+      1. K2's urgency is the starting point
+      2. Rule-based assessor runs independently
+      3. Final urgency = whichever is HIGHER (never downgrade K2)
+      4. urgency_reason comes from K2 if available, otherwise from the assessor
+
+    If K2 returned nothing or an invalid value, fall back to the assessor entirely.
+    """
+    valid = {"routine", "urgent", "emergent"}
+
+    k2_level = k2_urgency if k2_urgency in valid else None
+    assessor_result = urgency_assessor.assess(generic_names, symptom_texts)
+    assessor_level = assessor_result.get("urgency", "routine")
+    assessor_reason = assessor_result.get("reason", "")
+
+    if k2_level is None:
+        # K2 gave nothing valid — fall back to assessor entirely
+        logger.warning(f"K2 returned invalid urgency '{k2_urgency}' — using assessor")
+        return assessor_level, assessor_reason
+
+    # Take the higher of the two — never downgrade K2
+    if _URGENCY_RANK.get(assessor_level, 0) > _URGENCY_RANK.get(k2_level, 0):
+        logger.info(
+            f"Assessor escalated urgency from K2's '{k2_level}' to '{assessor_level}': "
+            f"{assessor_reason}"
+        )
+        return assessor_level, assessor_reason
+
+    # K2's level stands — use K2's reason (returned separately by caller)
+    return k2_level, ""
+
+
+# ======================================================================
+# Safe alternative — K2 generates this; static table is code fallback only
+# ======================================================================
+
+async def _fetch_safe_alternative(
+    offending_drug: str,
+    stable_drug: str,
+    mechanism: str,
+) -> Optional[str]:
+    """
+    K2 generates the safe alternative suggestion.
+    Static lookup is used only if the K2 call fails.
+
+    temperature=0 for determinism. Non-critical — never raises.
+    """
+    system = (
+        "You are a clinical pharmacist who specialises in drug interaction management. "
+        "Return ONLY valid JSON, no explanation, no markdown."
+    )
+    user = (
+        f"A dangerous drug interaction has been identified:\n"
+        f"  Offending drug (consider replacing): {offending_drug}\n"
+        f"  Drug that must be kept: {stable_drug}\n"
+        f"  Interaction mechanism: {mechanism}\n\n"
+        "Suggest a therapeutically equivalent safer alternative to the offending drug "
+        "that avoids this specific interaction mechanism. Be specific, actionable, "
+        "and note any monitoring requirements for the switch.\n\n"
+        'Return: {"safer_alternative": "string", "rationale": "one concise sentence"}'
+    )
+
+    try:
+        result = await k2_client.call_and_parse_json(
+            system, user,
+            max_tokens=300,
+            timeout=30.0,
+        )
+        alt = result.get("safer_alternative", "").strip()
+        rationale = result.get("rationale", "").strip()
+        if alt:
+            return f"{alt} — {rationale}" if rationale else alt
+    except Exception as exc:
+        logger.warning(
+            f"Safe alternative K2 call failed ({offending_drug}/{stable_drug}): {exc} "
+            f"— using static fallback"
+        )
+
+    # Code fallback — only reached if K2 call failed
+    return _static_alt(offending_drug, stable_drug)
+
+
+# ======================================================================
+# Tool executor — called by K2AgenticClient when K2 requests a tool
+# ======================================================================
+
+async def execute_tool(tool_name: str, args: dict) -> Any:
+    """
+    Execute a tool requested by K2 during the agentic loop.
+    Returns a JSON-serialisable result. Never raises.
+    """
+
+    if tool_name == "lookup_drug_interaction":
+        drug_a = args.get("drug_a", "").lower().strip()
+        drug_b = args.get("drug_b", "").lower().strip()
+        results = drug_lookup.lookup_interaction(drug_a, drug_b)
+        if results:
+            return results
+        norm_a = await drug_lookup.normalize(drug_a)
+        norm_b = await drug_lookup.normalize(drug_b)
+        if norm_a != drug_a or norm_b != drug_b:
+            results = drug_lookup.lookup_interaction(norm_a, norm_b)
+            if results:
+                return results
+        return {
+            "found": False,
+            "drug_a": drug_a,
+            "drug_b": drug_b,
+            "note": "No database record — consider searching PubMed for literature-only interactions.",
+        }
+
+    elif tool_name == "search_pubmed":
+        query = args.get("query", "").strip()
+        if not query:
+            return {"found": False, "note": "Empty query"}
+        words = [w for w in query.lower().split() if len(w) > 4][:3]
+        results = await pubmed_client.search_and_fetch(
+            drugs=words, symptom_text=query, max_results=5
+        )
+        return results if results else {
+            "found": False,
+            "query": query,
+            "note": "No PubMed results found.",
+        }
+
+    elif tool_name == "get_drug_class":
+        drug_name = args.get("drug_name", "").lower().strip()
+        classes = _drug_classes.get(drug_name)
+        if not classes:
+            norm = await drug_lookup.normalize(drug_name)
+            classes = _drug_classes.get(norm)
+        return {
+            "drug": drug_name,
+            "classes": classes or [],
+            "note": "Not in local database." if not classes else None,
+        }
+
+    elif tool_name == "get_cyp_profile":
+        drug_name = args.get("drug_name", "").lower().strip()
+        profile = _cyp_profiles.get(drug_name)
+        if not profile:
+            norm = await drug_lookup.normalize(drug_name)
+            profile = _cyp_profiles.get(norm)
+        return {
+            "drug": drug_name,
+            "cyp_profile": profile or {"inhibits": [], "induces": [], "substrate_of": []},
+            "note": "Not in local database." if not profile else None,
+        }
+
+    elif tool_name == "get_safe_alternative":
+        # K2 is calling this tool during its own investigation — execute it
+        # using the same K2 call logic, with static fallback on failure
+        replace = args.get("drug_to_replace", "").lower().strip()
+        keep = args.get("interacting_drug", "").lower().strip()
+        indication = args.get("indication", "").lower().strip()
+        mechanism = f"interaction between {replace} and {keep} via {indication}"
+        suggestion = await _fetch_safe_alternative(replace, keep, mechanism)
+        return {
+            "drug_to_replace": replace,
+            "suggestion": suggestion or (
+                f"Consult a clinical pharmacist for an alternative to {replace} "
+                f"that avoids interaction with {keep}."
+            ),
+        }
+
+    else:
+        logger.warning(f"Unknown tool requested by K2: {tool_name}")
+        return {"error": f"Tool '{tool_name}' is not implemented."}
+
+
+# ======================================================================
+# Prompt builders
+# ======================================================================
+
+def _prompt_rapid_check(
+    drug_a: str,
+    drug_b: str,
+    known_interaction: Optional[dict],
+    symptom: str,
+    recently_added: Optional[str],
+) -> tuple[str, str]:
+    system = (
+        "You are a clinical pharmacology expert. Confirm or refute whether a known "
+        "drug interaction is consistent with a patient symptom. "
+        "Return ONLY valid JSON with no preamble or markdown."
+    )
+    delta_note = (
+        f"\nNOTE: {recently_added} was recently added to this patient's regimen. "
+        "Consider whether this addition explains the symptom.\n"
+        if recently_added else ""
+    )
     interaction_text = (
         json.dumps(known_interaction, indent=2)
         if known_interaction
         else "No database record found for this pair."
     )
-
-    patient_context_str = _format_patient_context(patient_context)
-
-    user = f"""Drug pair:
-{drug_a} + {drug_b}
-
-Known interaction record:
-{interaction_text}
-
-Patient symptom:
-{symptom}
-
-Patient risk modifiers (apply these to adjust severity and urgency — cite the specific mechanism or evidence for each adjustment):
-{patient_context_str}
-
-Return this exact JSON structure:
-{{
-  "interaction_found": true/false,
-  "mechanism": "string — pharmacological mechanism with evidence citation (e.g. CYP2C9 inhibition, FDA warfarin label)",
-  "patient_risk_modifiers": "string — how the patient's specific factors amplify or attenuate this interaction, with evidence",
-  "symptom_match": true/false,
-  "symptom_explanation": "string — why the symptom matches or doesn't",
-  "confidence": 0-100,
-  "confidence_explanation": "string",
-  "recommendation": "string — specific clinical action accounting for patient risk factors",
-  "urgency": "routine|urgent|emergent"
-}}"""
+    user = (
+        f"Drug pair: {drug_a} + {drug_b}\n"
+        f"{delta_note}"
+        f"Known interaction record: {interaction_text}\n"
+        f"Patient symptom: {symptom}\n\n"
+        "Return this exact JSON structure:\n"
+        "{\n"
+        '  "interaction_found": true,\n'
+        '  "mechanism": "pharmacological mechanism string",\n'
+        '  "symptom_match": true,\n'
+        '  "symptom_explanation": "why symptom matches or not",\n'
+        '  "confidence": 0-100,\n'
+        '  "confidence_explanation": "reasoning behind the score",\n'
+        '  "recommendation": "specific clinical action",\n'
+        '  "urgency": "routine|urgent|emergent",\n'
+        '  "urgency_reason": "one sentence explaining the urgency level"\n'
+        "}"
+    )
     return system, user
 
 
-def _build_mechanism_trace_prompt(
-    medications: list[dict[str, Any]],
-    symptoms: list[dict[str, Any]],
-    interactions: list[dict[str, Any]],
-    patient_context: Optional[dict[str, Any]] = None,
+def _prompt_mechanism_trace(
+    medications: list[dict],
+    symptoms: list[dict],
+    interactions: list[dict],
+    recently_added: Optional[str],
 ) -> tuple[str, str]:
     system = (
         "You are a clinical pharmacologist specializing in adverse drug event analysis. "
-        "Your task is to construct a complete mechanistic causal chain grounded in established pharmacology. "
+        "Construct a complete mechanistic causal chain grounded in established pharmacology. "
         "Trace each step from pharmacological action through to the observed symptom. "
-        "Reason through enzyme inhibition/induction, receptor occupancy, and pharmacokinetic consequences in sequence. "
-        "For every causal step involving a patient-specific risk modifier (renal impairment, hepatic impairment, "
-        "age, sex, pregnancy), you MUST include a dedicated step that quantifies how that modifier changes drug "
-        "concentrations or effect, and cite the specific evidence (FDA label, pharmacokinetic study, clinical guideline). "
-        "Return ONLY valid JSON. No preamble. No markdown fences. No text before or after the JSON object. "
-        "Use only double-quoted strings. Do not use Python literals (True/False/None)."
+        "Return ONLY valid JSON. No preamble. No markdown."
     )
-
-    patient_context_str = _format_patient_context(patient_context)
-
-    user = f"""Medications:
-{json.dumps(medications, indent=2)}
-
-Symptoms:
-{json.dumps(symptoms, indent=2)}
-
-Known database interactions:
-{json.dumps(interactions, indent=2)}
-
-Patient risk modifiers (include patient-specific causal steps where relevant, citing mechanism and evidence):
-{patient_context_str}
-
-Return this exact JSON structure:
-{{
-  "causal_steps": [
-    {{
-      "step": 1,
-      "mechanism": "string — specific pharmacological mechanism",
-      "expected_finding": "string — observable clinical consequence",
-      "evidence": "string — citation: e.g. 'Fluconazole inhibits CYP2C9 (Ki 7 µM) — Niwa et al., Drug Metab Dispos 2005' or 'FDA warfarin label: CYP2C9 inhibitors increase INR'",
-      "source": "database|literature|mechanism",
-      "patient_modifier": "string or null — how this patient's specific factors affect this step (e.g. 'Hepatic impairment reduces CYP2C9 activity a further 40%, amplifying fluconazole inhibition — Child-Pugh B data, Verbeeck 2008')"
-    }}
-  ],
-  "confidence_factors": [
-    {{
-      "factor": "string — specific factor with evidence basis",
-      "direction": "increases|decreases",
-      "weight": "high|medium|low"
-    }}
-  ],
-  "overall_confidence": 0-100,
-  "recommendation": "string — specific clinical action accounting for patient risk factors",
-  "urgency": "routine|urgent|emergent"
-}}"""
+    delta_note = (
+        f"\nCRITICAL CONTEXT: {recently_added} was recently added or changed. "
+        "The patient was previously stable. Anchor your causal chain to the "
+        f"pharmacological consequences of introducing {recently_added}.\n"
+        if recently_added else ""
+    )
+    user = (
+        f"Medications:\n{json.dumps(medications, indent=2)}\n\n"
+        f"Symptoms:\n{json.dumps(symptoms, indent=2)}\n"
+        f"{delta_note}\n"
+        f"Known database interactions:\n{json.dumps(interactions, indent=2)}\n\n"
+        "Return this exact JSON structure:\n"
+        "{\n"
+        '  "causal_steps": [\n'
+        '    {\n'
+        '      "step": 1,\n'
+        '      "mechanism": "string",\n'
+        '      "expected_finding": "string",\n'
+        '      "evidence": "citation or mechanism description",\n'
+        '      "source": "database|literature|mechanism"\n'
+        '    }\n'
+        '  ],\n'
+        '  "confidence_factors": [\n'
+        '    {"factor": "string", "direction": "increases|decreases", "weight": "high|medium|low"}\n'
+        '  ],\n'
+        '  "overall_confidence": 0-100,\n'
+        '  "recommendation": "specific clinical action",\n'
+        '  "urgency": "routine|urgent|emergent",\n'
+        '  "urgency_reason": "one sentence explaining the urgency level"\n'
+        "}"
+    )
     return system, user
 
 
-def _build_mystery_solver_prompt(
-    medications: list[dict[str, Any]],
-    symptoms: list[dict[str, Any]],
-    patient_context: Optional[dict[str, Any]],
-    interactions: list[dict[str, Any]],
-    pubmed_snippets: list[dict[str, Any]],
+def _prompt_mystery_solver(
+    medications: list[dict],
+    symptoms: list[dict],
+    patient_context: Optional[dict],
+    recently_added: Optional[str],
 ) -> tuple[str, str]:
     system = (
-        "You are a clinical pharmacologist and diagnostician. "
-        "Generate ALL plausible hypotheses for why this patient is experiencing their symptoms. "
-        "Consider ALL categories: drug-drug interaction, drug-herb interaction, adverse drug effect, "
-        "medication failure, disease progression, non-adherence, withdrawal syndrome. "
-        "Evaluate each hypothesis against the full evidence. Rank by confidence. "
-        "Explain clearly why each rejected hypothesis was eliminated. "
-        "Be especially alert to: serotonergic load from multiple serotonergic drugs, "
-        "QT prolongation from multiple QT-prolonging drugs, CYP enzyme inhibition/induction patterns, "
-        "herb-drug interactions, and interactions only appearing in recent literature. "
-        "CRITICAL: Patient-specific risk modifiers (renal impairment, hepatic impairment, age, sex, pregnancy) "
-        "MUST influence hypothesis ranking and confidence scores. For each hypothesis modified by a patient factor, "
-        "cite the specific pharmacokinetic mechanism and a published reference (FDA label, clinical guideline, "
-        "pharmacokinetic study). Do not state a patient modifier influences a hypothesis without explaining exactly how. "
-        "Return ONLY valid JSON. No preamble. No markdown fences. No text before or after the JSON object. "
-        "Use only double-quoted strings. Do not use Python literals (True/False/None)."
+        "You are a clinical pharmacologist and diagnostician conducting an autonomous "
+        "investigation.\n\n"
+        "Tools available — USE THEM ACTIVELY:\n"
+        "  • lookup_drug_interaction(drug_a, drug_b)\n"
+        "  • search_pubmed(query)\n"
+        "  • get_drug_class(drug_name)\n"
+        "  • get_cyp_profile(drug_name)\n"
+        "  • get_safe_alternative(drug_to_replace, indication, interacting_drug)\n\n"
+        "Investigation protocol:\n"
+        "  1. Call lookup_drug_interaction for EVERY drug pair\n"
+        "  2. Call get_drug_class for each drug\n"
+        "  3. Call get_cyp_profile where enzyme interactions are plausible\n"
+        "  4. Call search_pubmed for any pair not confirmed in the database\n"
+        "  5. Call get_safe_alternative after identifying the primary interaction\n\n"
+        "Generate ALL plausible hypotheses: drug-drug, drug-herb, adverse effect, "
+        "medication failure, disease progression, non-adherence, withdrawal.\n"
+        "Rank by confidence. Explain why each rejected hypothesis was eliminated.\n"
+        "Be alert to: serotonin syndrome, QT prolongation, CYP interactions, "
+        "herb-drug interactions, literature-only interactions.\n\n"
+        "Return your complete final analysis as valid JSON matching the schema exactly."
     )
-
-    patient_context_str = _format_patient_context(patient_context)
-    pubmed_str = json.dumps(pubmed_snippets, indent=2) if pubmed_snippets else "[]"
-
-    user = f"""Patient risk modifiers (these MUST influence hypothesis ranking and confidence — cite mechanism and evidence for each adjustment):
-{patient_context_str}
-
-Medications:
-{json.dumps(medications, indent=2)}
-
-Symptoms:
-{json.dumps(symptoms, indent=2)}
-
-Known database interactions for all drug pairs:
-{json.dumps(interactions, indent=2)}
-
-Recent PubMed literature (top abstracts):
-{pubmed_str}
-
-Return this exact JSON structure:
-{{
-  "hypotheses": [
-    {{
-      "id": "H1",
-      "description": "string",
-      "mechanism": "string",
-      "confidence": 0-100,
-      "supporting_evidence": ["string", "..."],
-      "rejecting_evidence": ["string", "..."],
-      "status": "supported|possible|rejected",
-      "evidence_source": "database|literature|mechanism",
-      "pubmed_refs": ["PMID", "..."]
-    }}
-  ],
-  "top_hypothesis": "H1",
-  "rejected_hypotheses": ["H3", "H4"],
-  "recommendation": "string",
-  "urgency": "routine|urgent|emergent",
-  "urgency_reason": "string"
-}}"""
+    delta_block = (
+        f"\n\nCRITICAL — DIFFERENTIAL FOCUS:\n"
+        f"The patient was STABLE before '{recently_added}' was added or changed.\n"
+        f"  • Start by looking up ALL interactions involving '{recently_added}'\n"
+        f"  • Check '{recently_added}' drug class and CYP profile first\n"
+        f"  • Weight the temporal correlation between '{recently_added}' "
+        f"introduction and symptom onset as strong evidence\n"
+        f"  • Only investigate other hypotheses if '{recently_added}' does not "
+        f"fully explain the presentation\n"
+        if recently_added else ""
+    )
+    user = (
+        f"Patient context:\n{json.dumps(patient_context or {}, indent=2)}\n"
+        f"{delta_block}\n"
+        f"Medications:\n{json.dumps(medications, indent=2)}\n\n"
+        f"Symptoms:\n{json.dumps(symptoms, indent=2)}\n\n"
+        "After your tool-based investigation, return this exact JSON:\n"
+        "{\n"
+        '  "hypotheses": [\n'
+        '    {\n'
+        '      "id": "H1",\n'
+        '      "description": "string",\n'
+        '      "mechanism": "string",\n'
+        '      "confidence": 0-100,\n'
+        '      "supporting_evidence": ["string"],\n'
+        '      "rejecting_evidence": ["string"],\n'
+        '      "status": "supported|possible|rejected",\n'
+        '      "evidence_source": "database|literature|mechanism",\n'
+        '      "pubmed_refs": ["PMID"]\n'
+        '    }\n'
+        '  ],\n'
+        '  "top_hypothesis": "H1",\n'
+        '  "rejected_hypotheses": ["H3"],\n'
+        '  "safe_alternative": "safer substitute recommendation string",\n'
+        '  "tools_used": ["tool_name"],\n'
+        '  "recommendation": "specific clinical action",\n'
+        '  "urgency": "routine|urgent|emergent",\n'
+        '  "urgency_reason": "one sentence explaining the urgency level"\n'
+        "}"
+    )
     return system, user
 
 
-# ------------------------------------------------------------------ #
-# Main orchestrator
-# ------------------------------------------------------------------ #
+# ======================================================================
+# Analysis service
+# ======================================================================
+
 class AnalysisService:
-    async def run_rapid_check(self, request: dict[str, Any]) -> dict[str, Any]:
+
+    # ── Rapid Check ──────────────────────────────────────────────────────────
+
+    async def run_rapid_check(self, request: dict) -> dict:
         meds = request["medications"]
         symptoms = request["symptoms"]
-        patient_context = request.get("patientContext")
+        recently_added = request.get("recentlyAdded")
 
-        # Normalize
-        generic_names = [await drug_lookup.normalize(m["displayName"]) for m in meds]
+        generic_names = [
+            await drug_lookup.normalize(m["displayName"]) for m in meds
+        ]
         pairs = drug_lookup.get_pairs(generic_names)
-
-        # Look up interactions
-        all_interactions: list[dict[str, Any]] = []
+        all_interactions = []
         for a, b in pairs:
             all_interactions.extend(drug_lookup.lookup_interaction(a, b))
-
         known = all_interactions[0] if all_interactions else None
 
-        # Build prompt — narrow context only
         drug_a = generic_names[0] if generic_names else "unknown"
         drug_b = generic_names[1] if len(generic_names) > 1 else "unknown"
         symptom_text = symptoms[0]["description"] if symptoms else "unspecified symptom"
 
-        system, user = _build_rapid_check_prompt(drug_a, drug_b, known, symptom_text, patient_context)
+        system, user = _prompt_rapid_check(
+            drug_a, drug_b, known, symptom_text, recently_added
+        )
+        fallback = (
+            _load_fallback("warfarin")
+            if "warfarin" in generic_names and "fluconazole" in generic_names
+            else None
+        )
+        k2 = await k2_client.call_and_parse_json(
+            system, user, max_tokens=1024, timeout=60.0, demo_fallback=fallback
+        )
 
-        # Determine demo fallback
-        fallback = None
-        if "warfarin" in generic_names and "fluconazole" in generic_names:
-            fallback = _load_fallback("warfarin")
-
-        try:
-            k2_result = await k2_client.call_and_parse_json(
-                system,
-                user,
-                max_tokens=2048,
-                timeout=60.0,
-                demo_fallback=fallback,
-            )
-        except ValueError as exc:
-            logger.error(f"run_rapid_check: K2 parse failed: {exc}")
-            k2_result = {}
-
-        # Override urgency with rule-based assessor
-        urgency_result = urgency_assessor.assess(
+        # ── Urgency: K2 is primary, assessor only escalates ───────────────────
+        final_urgency, escalation_reason = _resolve_urgency(
+            k2.get("urgency"),
             generic_names,
             [s["description"] for s in symptoms],
-            patient_context=patient_context,
         )
+        urgency_reason = k2.get("urgency_reason") or escalation_reason or ""
+
+        # ── Safe alternative: K2 generates; static is code fallback ──────────
+        safe_alt = None
+        if k2.get("interaction_found") and known:
+            mechanism = known.get("mechanism") or k2.get("mechanism", "")
+            safe_alt = await _fetch_safe_alternative(drug_b, drug_a, mechanism)
 
         return {
             "strategy": "rapid",
-            "urgency": urgency_result["urgency"],
-            "urgency_reason": urgency_result.get("reason"),
-            "interaction_found": k2_result.get("interaction_found"),
-            "mechanism": k2_result.get("mechanism"),
-            "patient_risk_modifiers": k2_result.get("patient_risk_modifiers"),
+            "urgency": final_urgency,
+            "urgency_reason": urgency_reason,
+            "interaction_found": k2.get("interaction_found"),
+            "mechanism": k2.get("mechanism"),
             "causal_steps": [
                 {
                     "step": 1,
-                    "mechanism": k2_result.get("mechanism", ""),
-                    "expected_finding": k2_result.get("symptom_explanation", ""),
+                    "mechanism": k2.get("mechanism", ""),
+                    "expected_finding": k2.get("symptom_explanation", ""),
                     "evidence": known.get("description", "") if known else "",
                     "source": known.get("source", "mechanism") if known else "mechanism",
                 }
             ],
+            "overall_confidence": k2.get("confidence", 50),
             "confidence_factors": [
                 {
-                    "factor": k2_result.get("confidence_explanation", ""),
+                    "factor": k2.get("confidence_explanation", "K2 confidence estimate"),
                     "direction": "increases",
                 }
             ],
-            "overall_confidence": k2_result.get("confidence", 50),
-            "recommendation": k2_result.get(
-                "recommendation",
-                "Consult a clinical pharmacist.",
-            ),
+            "safe_alternative": safe_alt,
+            "recommendation": k2.get("recommendation") or "Consult a clinical pharmacist.",
             "disclaimer": DISCLAIMER,
             "db_interaction": known,
         }
 
-    async def run_mechanism_trace(self, request: dict[str, Any]) -> dict[str, Any]:
+    # ── Mechanism Trace ───────────────────────────────────────────────────────
+
+    async def run_mechanism_trace(self, request: dict) -> dict:
         meds = request["medications"]
         symptoms = request["symptoms"]
-        patient_context = request.get("patientContext")
+        recently_added = request.get("recentlyAdded")
 
-        # Normalize all medications
         for m in meds:
             m["generic"] = await drug_lookup.normalize(m["displayName"])
-
         generic_names = [m["generic"] for m in meds]
         pairs = drug_lookup.get_pairs(generic_names)
-
-        # Collect all interactions
-        all_interactions: list[dict[str, Any]] = []
+        all_interactions = []
         for a, b in pairs:
             all_interactions.extend(drug_lookup.lookup_interaction(a, b))
+        primary = all_interactions[0] if all_interactions else None
 
-        system, user = _build_mechanism_trace_prompt(meds, symptoms, all_interactions, patient_context)
-
-        fallback = None
-        if "warfarin" in generic_names and "fluconazole" in generic_names:
-            fallback = _load_fallback("warfarin")
-
-        try:
-            k2_result = await k2_client.call_and_parse_json(
-                system,
-                user,
-                max_tokens=4096,
-                timeout=90.0,
-                demo_fallback=fallback,
-            )
-        except ValueError as exc:
-            logger.error(f"run_mechanism_trace: K2 parse failed: {exc}")
-            k2_result = {}
-
-        urgency_result = urgency_assessor.assess(
-            generic_names,
-            [s["description"] for s in symptoms],
-            patient_context=patient_context,
+        system, user = _prompt_mechanism_trace(
+            meds, symptoms, all_interactions, recently_added
+        )
+        fallback = (
+            _load_fallback("warfarin")
+            if "warfarin" in generic_names and "fluconazole" in generic_names
+            else None
+        )
+        k2 = await k2_client.call_and_parse_json(
+            system, user, max_tokens=4096, timeout=90.0, demo_fallback=fallback
         )
 
-        raw_confidence = k2_result.get("overall_confidence", 50)
+        # ── Urgency ───────────────────────────────────────────────────────────
+        final_urgency, escalation_reason = _resolve_urgency(
+            k2.get("urgency"),
+            generic_names,
+            [s["description"] for s in symptoms],
+        )
+        urgency_reason = k2.get("urgency_reason") or escalation_reason or ""
+
+        # ── Confidence: K2 score passed through; engine generates annotations ──
+        raw_conf = k2.get("overall_confidence", 50)
         adjusted = confidence_engine.adjust(
-            raw_confidence,
+            raw_conf,
             has_db_interaction=bool(all_interactions),
-            symptom_matches=True,
             has_literature=False,
         )
 
+        # ── Safe alternative ──────────────────────────────────────────────────
+        safe_alt = None
+        if primary:
+            mechanism = primary.get("mechanism", "")
+            safe_alt = await _fetch_safe_alternative(
+                primary["drug_b"], primary["drug_a"], mechanism
+            )
+
         return {
             "strategy": "mechanism",
-            "urgency": urgency_result["urgency"],
-            "urgency_reason": urgency_result.get("reason"),
-            "causal_steps": k2_result.get("causal_steps", []),
-            "confidence_factors": k2_result.get("confidence_factors", []),
+            "urgency": final_urgency,
+            "urgency_reason": urgency_reason,
+            "causal_steps": k2.get("causal_steps", []),
+            "confidence_factors": k2.get("confidence_factors", []) + adjusted["annotations"],
             "overall_confidence": adjusted["final_score"],
-            "recommendation": k2_result.get(
-                "recommendation",
-                "Consult a clinical pharmacist.",
-            ),
+            "safe_alternative": safe_alt,
+            "recommendation": k2.get("recommendation") or "Consult a clinical pharmacist.",
             "disclaimer": DISCLAIMER,
-            "db_interaction": all_interactions[0] if all_interactions else None,
+            "db_interaction": primary,
         }
 
-    async def run_mystery_solver(self, request: dict[str, Any]) -> dict[str, Any]:
+    # ── Mystery Solver (non-streaming) ────────────────────────────────────────
+
+    async def run_mystery_solver(self, request: dict) -> dict:
         meds = request["medications"]
         symptoms = request["symptoms"]
         patient_context = request.get("patientContext")
+        recently_added = request.get("recentlyAdded")
 
         for m in meds:
             m["generic"] = await drug_lookup.normalize(m["displayName"])
-
         generic_names = [m["generic"] for m in meds]
-        pairs = drug_lookup.get_pairs(generic_names)
 
-        all_interactions: list[dict[str, Any]] = []
-        for a, b in pairs:
-            all_interactions.extend(drug_lookup.lookup_interaction(a, b))
-
-        # Fetch PubMed literature (top 5 snippets)
-        symptom_text = " ".join(s["description"] for s in symptoms)
-        pubmed_snippets = await pubmed_client.search_and_fetch(
-            drugs=generic_names,
-            symptom_text=symptom_text,
-            max_results=5,
+        system, user = _prompt_mystery_solver(
+            meds, symptoms, patient_context, recently_added
         )
-
-        system, user = _build_mystery_solver_prompt(
-            meds,
-            symptoms,
-            patient_context,
-            all_interactions,
-            pubmed_snippets,
-        )
-
-        # Determine demo fallback
         fallback = None
         if "sertraline" in generic_names and "tramadol" in generic_names:
             fallback = _load_fallback("serotonin")
         elif "metformin" in generic_names and "st. john's wort" in generic_names:
             fallback = _load_fallback("stjohnswort")
 
-        try:
-            k2_result = await k2_client.call_and_parse_json(
-                system,
-                user,
-                max_tokens=8192,
-                timeout=120.0,
-                demo_fallback=fallback,
-            )
-        except ValueError as exc:
-            logger.error(f"run_mystery_solver: K2 parse failed: {exc}")
-            k2_result = {}
-
-        urgency_result = urgency_assessor.assess(
-            generic_names,
-            [s["description"] for s in symptoms],
-            patient_context=patient_context,
+        k2_result, logprobs_content, tools_used = await k2_build_client.run_agent_loop(
+            system_prompt=system,
+            user_prompt=user,
+            tool_executor=execute_tool,
+            demo_fallback=fallback,
+            timeout=120.0,
         )
 
-        hypotheses = k2_result.get("hypotheses", [])
+        # ── Urgency: K2 primary, assessor only escalates ──────────────────────
+        final_urgency, escalation_reason = _resolve_urgency(
+            k2_result.get("urgency"),
+            generic_names,
+            [s["description"] for s in symptoms],
+        )
+        urgency_reason = k2_result.get("urgency_reason") or escalation_reason or ""
 
-        # Build tree nodes/edges
+        hypotheses = k2_result.get("hypotheses", [])
         tree = tree_builder.build(hypotheses)
 
-        # Adjust confidence on top hypothesis
         top_id = k2_result.get("top_hypothesis", "H1")
-        top_hyp = next((h for h in hypotheses if h.get("id") == top_id), None)
-        raw_conf = top_hyp.get("confidence", 50) if top_hyp else 50
+        top_hyp = next((h for h in hypotheses if h["id"] == top_id), None)
+        raw_conf = top_hyp["confidence"] if top_hyp else 50
 
+        # ── Logprob calibration: discounts K2's score when model was uncertain ─
+        calibrated_conf, calibration_note = _calibrate_confidence_with_logprobs(
+            raw_conf, logprobs_content
+        )
         adjusted = confidence_engine.adjust(
-            raw_conf,
-            has_db_interaction=bool(all_interactions),
-            symptom_matches=True,
-            has_literature=bool(pubmed_snippets),
+            calibrated_conf,
+            has_db_interaction="lookup_drug_interaction" in tools_used,
+            has_literature="search_pubmed" in tools_used,
+            logprob_note=calibration_note,
         )
 
         return {
             "strategy": "hypothesis",
-            "urgency": urgency_result["urgency"],
-            "urgency_reason": urgency_result.get("reason")
-            or k2_result.get("urgency_reason"),
+            "urgency": final_urgency,
+            "urgency_reason": urgency_reason,
             "hypotheses": hypotheses,
             "top_hypothesis": top_id,
             "overall_confidence": adjusted["final_score"],
             "confidence_factors": adjusted["annotations"],
+            "safe_alternative": k2_result.get("safe_alternative"),
+            "tools_used": tools_used,
             "tree_nodes": tree["nodes"],
             "tree_edges": tree["edges"],
-            "recommendation": k2_result.get(
-                "recommendation",
-                "Consult a clinical pharmacist.",
-            ),
+            "recommendation": k2_result.get("recommendation") or "Consult a clinical pharmacist.",
             "disclaimer": DISCLAIMER,
-            "db_interaction": all_interactions[0] if all_interactions else None,
+            "db_interaction": None,
         }
 
-    async def stream_mystery_solver(
-        self,
-        request: dict[str, Any],
-    ) -> AsyncIterator[dict[str, Any]]:
+    # ── Mystery Solver (streaming SSE) ───────────────────────────────────────
+
+    async def stream_mystery_solver(self, request: dict) -> AsyncIterator[dict]:
         """
-        Yields SSE-compatible dicts with keys: event, data.
-        Events: stage, thinking, result, error.
+        Streaming Mystery Solver via SSE.
+
+        Logprob calibration is not applied on the streaming path — logprobs
+        are only returned on the non-streaming final turn of run_agent_loop.
+        Use POST /api/analyze for the fully calibrated result.
+
+        SSE events: stage, thinking, tool_summary, result, error
         """
         try:
             meds = request["medications"]
             symptoms = request["symptoms"]
             patient_context = request.get("patientContext")
+            recently_added = request.get("recentlyAdded")
 
             yield {"event": "stage", "data": "Normalizing drug names"}
-
             for m in meds:
                 m["generic"] = await drug_lookup.normalize(m["displayName"])
-
             generic_names = [m["generic"] for m in meds]
-            pairs = drug_lookup.get_pairs(generic_names)
 
-            yield {"event": "stage", "data": "Loading interaction database"}
+            yield {
+                "event": "stage",
+                "data": (
+                    f"Focusing on recently changed drug: {recently_added}"
+                    if recently_added
+                    else "K2 investigating — calling tools autonomously"
+                ),
+            }
 
-            all_interactions: list[dict[str, Any]] = []
-            for a, b in pairs:
-                all_interactions.extend(drug_lookup.lookup_interaction(a, b))
-
-            yield {"event": "stage", "data": "Fetching literature"}
-
-            symptom_text = " ".join(s["description"] for s in symptoms)
-            pubmed_snippets = await pubmed_client.search_and_fetch(
-                drugs=generic_names,
-                symptom_text=symptom_text,
-                max_results=5,
+            system, user = _prompt_mystery_solver(
+                meds, symptoms, patient_context, recently_added
             )
-
-            yield {"event": "stage", "data": "K2 generating hypotheses"}
-
-            system, user = _build_mystery_solver_prompt(
-                meds,
-                symptoms,
-                patient_context,
-                all_interactions,
-                pubmed_snippets,
-            )
-
             fallback = None
             if "sertraline" in generic_names and "tramadol" in generic_names:
                 fallback = _load_fallback("serotonin")
             elif "metformin" in generic_names and "st. john's wort" in generic_names:
                 fallback = _load_fallback("stjohnswort")
 
-            # Stream K2 reasoning tokens and capture full output
-            full_text = ""
-            after_sentinel = False
+            async for event in k2_build_client.stream_agent_loop(
+                system_prompt=system,
+                user_prompt=user,
+                tool_executor=execute_tool,
+                demo_fallback=fallback,
+                timeout=120.0,
+            ):
+                event_type = event["event"]
 
-            async for token in k2_client.stream(system, user):
-                if token == "---RESULT---":
-                    after_sentinel = True
-                    continue
+                if event_type in ("thinking", "tool_summary"):
+                    yield event
 
-                if after_sentinel:
-                    full_text += token
-                else:
-                    yield {"event": "thinking", "data": token}
+                elif event_type == "result":
+                    k2_result = event["data"]
+                    yield {"event": "stage", "data": "Building reasoning tree"}
 
-            # Parse the full JSON
-            k2_result = K2Client._repair_json(full_text)
-            if k2_result is None:
-                if fallback is not None:
-                    k2_result = fallback
-                else:
-                    yield {"event": "error", "data": "Failed to parse K2 response"}
-                    return
+                    # ── Urgency ───────────────────────────────────────────────
+                    final_urgency, escalation_reason = _resolve_urgency(
+                        k2_result.get("urgency"),
+                        generic_names,
+                        [s["description"] for s in symptoms],
+                    )
+                    urgency_reason = k2_result.get("urgency_reason") or escalation_reason or ""
 
-            yield {"event": "stage", "data": "Building reasoning tree"}
+                    hypotheses = k2_result.get("hypotheses", [])
+                    tree = tree_builder.build(hypotheses)
+                    tools_used = k2_result.get("tools_used", [])
 
-            urgency_result = urgency_assessor.assess(
-                generic_names,
-                [s["description"] for s in symptoms],
-                patient_context=patient_context,
-            )
+                    top_id = k2_result.get("top_hypothesis", "H1")
+                    top_hyp = next((h for h in hypotheses if h["id"] == top_id), None)
+                    raw_conf = top_hyp["confidence"] if top_hyp else 50
 
-            hypotheses = k2_result.get("hypotheses", [])
-            tree = tree_builder.build(hypotheses)
+                    # ── Confidence (no logprobs on streaming path) ─────────────
+                    adjusted = confidence_engine.adjust(
+                        raw_conf,
+                        has_db_interaction="lookup_drug_interaction" in tools_used,
+                        has_literature="search_pubmed" in tools_used,
+                    )
 
-            top_id = k2_result.get("top_hypothesis", "H1")
-            top_hyp = next((h for h in hypotheses if h.get("id") == top_id), None)
-            raw_conf = top_hyp.get("confidence", 50) if top_hyp else 50
+                    yield {
+                        "event": "result",
+                        "data": {
+                            "strategy": "hypothesis",
+                            "urgency": final_urgency,
+                            "urgency_reason": urgency_reason,
+                            "hypotheses": hypotheses,
+                            "top_hypothesis": top_id,
+                            "overall_confidence": adjusted["final_score"],
+                            "confidence_factors": adjusted["annotations"],
+                            "safe_alternative": k2_result.get("safe_alternative"),
+                            "tools_used": tools_used,
+                            "tree_nodes": tree["nodes"],
+                            "tree_edges": tree["edges"],
+                            "recommendation": (
+                                k2_result.get("recommendation")
+                                or "Consult a clinical pharmacist."
+                            ),
+                            "disclaimer": DISCLAIMER,
+                            "db_interaction": None,
+                        },
+                    }
 
-            adjusted = confidence_engine.adjust(
-                raw_conf,
-                has_db_interaction=bool(all_interactions),
-                symptom_matches=True,
-                has_literature=bool(pubmed_snippets),
-            )
+                elif event_type == "error":
+                    yield event
 
-            result = {
-                "strategy": "hypothesis",
-                "urgency": urgency_result["urgency"],
-                "urgency_reason": urgency_result.get("reason")
-                or k2_result.get("urgency_reason"),
-                "hypotheses": hypotheses,
-                "top_hypothesis": top_id,
-                "overall_confidence": adjusted["final_score"],
-                "confidence_factors": adjusted["annotations"],
-                "tree_nodes": tree["nodes"],
-                "tree_edges": tree["edges"],
-                "recommendation": k2_result.get(
-                    "recommendation",
-                    "Consult a clinical pharmacist.",
-                ),
-                "disclaimer": DISCLAIMER,
-                "db_interaction": all_interactions[0] if all_interactions else None,
-            }
-
-            yield {"event": "result", "data": result}
-
-        except Exception as e:
-            logger.error(f"stream_mystery_solver error: {e}", exc_info=True)
-            yield {"event": "error", "data": str(e)}
+        except Exception as exc:
+            logger.error(f"stream_mystery_solver error: {exc}", exc_info=True)
+            yield {"event": "error", "data": str(exc)}
 
 
 analysis_service = AnalysisService()

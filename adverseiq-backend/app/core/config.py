@@ -1,25 +1,31 @@
+from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env", extra="ignore")
+
     k2_api_key: str
+
+    # Standard endpoint — Rapid Check and Mechanism Trace
     k2_base_url: str = "https://api.k2think.ai/v1"
     k2_model: str = "MBZUAI-IFM/K2-Think-v2"
 
-    # Supabase HTTP client (no direct DB connection)
+    # Agentic endpoint — Mystery Solver only
+    k2_build_url: str = "https://build-api.k2think.ai/v1"
+    k2_build_model: str = "MBZUAI-IFM/K2-V2-Instruct"
+
+    # Supabase
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
-    # Kept for reference; not used by the app at runtime
     database_url: str = ""
-    frontend_url: str = "http://localhost:3000"
+    frontend_url: str = "*"
 
-    # Rate limiting — stay under 20 RPM, track against 18 as buffer
-    k2_rate_limit: int = 18
+    # Rate limiting — build-api rate limit unknown; conservative threshold
+    k2_rate_limit: int = 15
     k2_rate_window: int = 60  # seconds
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 @lru_cache()
