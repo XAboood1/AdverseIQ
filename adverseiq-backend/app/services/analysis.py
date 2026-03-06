@@ -483,11 +483,12 @@ class AnalysisService:
         system, user = _prompt_rapid_check(
             drug_a, drug_b, known, symptom_text, recently_added
         )
-        fallback = (
-            _load_fallback("warfarin")
-            if "warfarin" in generic_names and "fluconazole" in generic_names
-            else None
-        )
+        if "warfarin" in generic_names and "fluconazole" in generic_names:
+            fallback = _load_fallback("warfarin")
+        elif "metformin" in generic_names and "st. john's wort" in generic_names:
+            fallback = _load_fallback("stjohnswort")
+        else:
+            fallback = None
         k2 = await k2_client.call_and_parse_json(
             system, user, max_tokens=1024, timeout=60.0, demo_fallback=fallback
         )
@@ -553,11 +554,12 @@ class AnalysisService:
         system, user = _prompt_mechanism_trace(
             meds, symptoms, all_interactions, recently_added
         )
-        fallback = (
-            _load_fallback("warfarin")
-            if "warfarin" in generic_names and "fluconazole" in generic_names
-            else None
-        )
+        if "warfarin" in generic_names and "fluconazole" in generic_names:
+            fallback = _load_fallback("warfarin")
+        elif "metformin" in generic_names and "st. john's wort" in generic_names:
+            fallback = _load_fallback("stjohnswort")
+        else:
+            fallback = None
         k2 = await k2_client.call_and_parse_json(
             system, user, max_tokens=4096, timeout=90.0, demo_fallback=fallback
         )
@@ -617,8 +619,6 @@ class AnalysisService:
         fallback = None
         if "sertraline" in generic_names and "tramadol" in generic_names:
             fallback = _load_fallback("serotonin")
-        elif "metformin" in generic_names and "st. john's wort" in generic_names:
-            fallback = _load_fallback("stjohnswort")
 
         k2_result, logprobs_content, tools_used = await k2_build_client.run_agent_loop(
             system_prompt=system,
@@ -709,8 +709,6 @@ class AnalysisService:
             fallback = None
             if "sertraline" in generic_names and "tramadol" in generic_names:
                 fallback = _load_fallback("serotonin")
-            elif "metformin" in generic_names and "st. john's wort" in generic_names:
-                fallback = _load_fallback("stjohnswort")
 
             async for event in k2_build_client.stream_agent_loop(
                 system_prompt=system,

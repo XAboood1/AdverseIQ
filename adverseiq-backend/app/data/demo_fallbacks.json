@@ -46,89 +46,37 @@
     }
   },
   "stjohnswort": {
-    "strategy": "hypothesis",
+    "strategy": "mechanism",
     "urgency": "urgent",
     "urgency_reason": "Possible herb–drug interaction with reduced therapeutic effect and hyperglycemia risk.",
-    "hypotheses": [
+    "causal_steps": [
       {
-        "id": "H1",
-        "description": "St. John's Wort induction effects reducing metformin exposure or effectiveness",
-        "mechanism": "St. John's Wort induces CYP3A4 and P-glycoprotein pathways; broad induction can reduce exposure of some co-administered drugs and worsen control in susceptible patients.",
-        "confidence": 78,
-        "supporting_evidence": [
-          "St. John's Wort is a well-characterized CYP3A4 and P-gp inducer",
-          "Temporal correlation with symptom onset after herb initiation",
-          "Literature contains reports of clinically relevant herb–drug interactions"
-        ],
-        "rejecting_evidence": [],
-        "status": "supported",
-        "evidence_source": "literature",
-        "pubmed_refs": ["31245678"]
+        "step": 1,
+        "mechanism": "St. John's Wort activates pregnane X receptor (PXR), upregulating CYP3A4 and P-glycoprotein expression in the gut and liver",
+        "expected_finding": "Increased hepatic and intestinal metabolic capacity",
+        "evidence": "Hyperforin, the primary active constituent of St. John's Wort, is a potent PXR activator responsible for CYP3A4 and P-gp induction.",
+        "source": "literature"
       },
       {
-        "id": "H2",
-        "description": "Lisinopril causing hyperglycemia",
-        "mechanism": "ACE inhibitors generally do not cause clinically significant hyperglycemia.",
-        "confidence": 12,
-        "supporting_evidence": [],
-        "rejecting_evidence": [
-          "Not a typical effect of lisinopril",
-          "Timing does not fit if lisinopril was long-standing"
-        ],
-        "status": "rejected",
-        "evidence_source": "mechanism",
-        "pubmed_refs": []
+        "step": 2,
+        "mechanism": "Upregulated CYP3A4 and P-gp increase first-pass extraction and efflux transport, reducing bioavailability of co-administered substrates",
+        "expected_finding": "Reduced plasma concentrations of susceptible co-medications",
+        "evidence": "Broad induction can reduce exposure of multiple drug classes sharing CYP3A4 or P-gp pathways.",
+        "source": "literature"
       },
       {
-        "id": "H3",
-        "description": "Atorvastatin-induced insulin resistance",
-        "mechanism": "Statins can modestly affect glycemia in some patients, typically gradually.",
-        "confidence": 18,
-        "supporting_evidence": ["Statins have an association with dysglycemia in some populations"],
-        "rejecting_evidence": [
-          "Often slower onset",
-          "If stable on atorvastatin previously, less likely to explain an acute change"
-        ],
-        "status": "rejected",
-        "evidence_source": "literature",
-        "pubmed_refs": []
-      },
-      {
-        "id": "H4",
-        "description": "Disease progression (worsening type 2 diabetes)",
-        "mechanism": "Natural progression can worsen control, usually over months/years.",
-        "confidence": 10,
-        "supporting_evidence": [],
-        "rejecting_evidence": [
-          "Abrupt timing favors an external trigger",
-          "Temporal link with herb initiation"
-        ],
-        "status": "rejected",
-        "evidence_source": "mechanism",
-        "pubmed_refs": []
-      },
-      {
-        "id": "H5",
-        "description": "Non-adherence to metformin",
-        "mechanism": "Missed doses reduce therapeutic exposure.",
-        "confidence": 8,
-        "supporting_evidence": [],
-        "rejecting_evidence": [
-          "No reported adherence issues",
-          "Does not explain herb-specific timing"
-        ],
-        "status": "rejected",
-        "evidence_source": "mechanism",
-        "pubmed_refs": []
+        "step": 3,
+        "mechanism": "Reduced metformin efficacy or indirect disruption of glucose homeostasis pathways leads to loss of glycemic control",
+        "expected_finding": "Elevated fasting and postprandial blood glucose; worsening HbA1c",
+        "evidence": "Temporal correlation between herb initiation and glycemic deterioration; published case literature supports clinically significant herb–drug interactions affecting glucose control.",
+        "source": "literature"
       }
     ],
-    "top_hypothesis": "H1",
-    "rejected_hypotheses": ["H2", "H3", "H4", "H5"],
     "overall_confidence": 78,
     "confidence_factors": [
-      { "factor": "PubMed literature supports hypothesis", "direction": "increases" },
-      { "factor": "Temporal onset correlates with herb initiation", "direction": "increases" },
-      { "factor": "Mechanism pharmacologically plausible", "direction": "increases" }
+      { "factor": "PubMed literature supports herb-drug interaction", "direction": "increases", "weight": "high" },
+      { "factor": "Temporal onset correlates with herb initiation", "direction": "increases", "weight": "high" },
+      { "factor": "Mechanism pharmacologically plausible via CYP3A4/P-gp induction", "direction": "increases", "weight": "medium" }
     ],
     "recommendation": "Stop St. John's Wort and monitor glucose closely. Reassess medication plan and investigate other causes if hyperglycemia persists.",
     "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
