@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import analyze, analyses, drugs, export, health
+from app.routers import analyze, analyses, drugs, export, health, pubmed
 from app.services.drug_lookup import drug_lookup
 
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +52,7 @@ app.include_router(analyze.router, prefix="/api")
 # New additions from the export/addendum document
 app.include_router(export.router, prefix="/api")
 app.include_router(analyses.router, prefix="/api")
+app.include_router(pubmed.router, prefix="/api")
 
 
 @app.get("/")
