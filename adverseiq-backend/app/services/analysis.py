@@ -625,7 +625,7 @@ class AnalysisService:
             user_prompt=user,
             tool_executor=execute_tool,
             demo_fallback=fallback,
-            timeout=120.0,
+            timeout=60.0,
         )
 
         # ── Urgency: K2 primary, assessor only escalates ──────────────────────
@@ -717,7 +717,7 @@ class AnalysisService:
                 user_prompt=user,
                 tool_executor=execute_tool,
                 demo_fallback=fallback,
-                timeout=120.0,
+                timeout=60.0,
             ):
                 event_type = event["event"]
 

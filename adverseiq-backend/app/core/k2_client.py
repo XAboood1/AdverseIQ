@@ -479,7 +479,7 @@ class K2AgenticClient:
       - Thinking tokens come from reasoning_content delta, not content delta
     """
 
-    MAX_TURNS = 8  # 4–6 is typical; 8 is a safety ceiling
+    MAX_TURNS = 5  # 4–5 is typical; 5 is a good balance of depth vs speed
 
     def __init__(self):
         self.client = AsyncOpenAI(
@@ -508,7 +508,7 @@ class K2AgenticClient:
         tool_executor: Callable[[str, dict], Any],
         thinking_callback: Optional[Callable[[str], None]] = None,
         demo_fallback: Optional[dict] = None,
-        timeout: float = 120.0,
+        timeout: float = 60.0,
     ) -> tuple[dict, Optional[list], list[str]]:
         """
         Run the full agentic investigation loop.
@@ -544,7 +544,7 @@ class K2AgenticClient:
             kwargs: dict = {
                 "model": settings.k2_build_model,
                 "messages": messages,
-                "max_tokens": 8192,
+                "max_tokens": 4096,
                 "timeout": timeout,
             }
 
@@ -663,7 +663,7 @@ class K2AgenticClient:
         user_prompt: str,
         tool_executor: Callable[[str, dict], Any],
         demo_fallback: Optional[dict] = None,
-        timeout: float = 120.0,
+        timeout: float = 60.0,
     ) -> AsyncIterator[dict]:
         """
         Run the agent loop and yield SSE-compatible event dicts.
