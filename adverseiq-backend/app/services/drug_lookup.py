@@ -133,7 +133,8 @@ class DrugLookupService:
                     timeout=8.0,
                 )
                 r.raise_for_status()
-                rxcui = r.json().get("idGroup", {}).get("rxnormId", [None])[0]
+                rxnorm_ids = r.json().get("idGroup", {}).get("rxnormId") or []
+                rxcui = rxnorm_ids[0] if rxnorm_ids else None
 
                 if rxcui:
                     r2 = await client.get(
@@ -155,6 +156,7 @@ class DrugLookupService:
         except Exception as e:
             logger.warning(f"RxNav lookup failed for '{key}': {e}")
 
+        # RxNav returned nothing or failed — return input as-is (lowercased)
         return key
 
     def get_pairs(self, medications: list[str]) -> list[tuple[str, str]]:

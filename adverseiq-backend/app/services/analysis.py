@@ -179,7 +179,9 @@ async def _fetch_safe_alternative(
         "Suggest a therapeutically equivalent safer alternative to the offending drug "
         "that avoids this specific interaction mechanism. Be specific, actionable, "
         "and note any monitoring requirements for the switch.\n\n"
-        'Return: {"safer_alternative": "string", "rationale": "one concise sentence"}'
+        "Return this JSON with real clinical content — do not use placeholder text:\n"
+        '{"safer_alternative": "<name of the alternative drug and how to use it>", '
+        '"rationale": "<one sentence explaining why it avoids the interaction>"}'
     )
 
     try:
