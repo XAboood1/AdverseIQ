@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: adverseiq-api
+    env: python
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: K2_API_KEY
+        sync: false
+
+      - key: K2_BASE_URL
+        value: https://api.k2think.ai/v1
+
+      - key: K2_BUILD_URL
+        value: https://build-api.k2think.ai/v1
+
+      - key: K2_BUILD_MODEL
+        value: MBZUAI-IFM/K2-V2-Instruct
+
+      - key: SUPABASE_URL
+        sync: false
+
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: FRONTEND_URL
+        sync: false
