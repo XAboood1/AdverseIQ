@@ -8,6 +8,9 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.1"
+
       - key: K2_API_KEY
         sync: false
 
