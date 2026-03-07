@@ -1,0 +1,203 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Google Fonts Import ===== */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ===== Premium Dark Biotech Theme ===== */
+@layer base {
+  :root {
+    --background: #060B12;
+    --foreground: #F8FAFC;
+    --font-inter: 'Inter', sans-serif;
+    --font-plus-jakarta: 'Plus Jakarta Sans', sans-serif;
+    --card: #0B1120;
+    --card-foreground: #F8FAFC;
+    --border: rgba(255, 255, 255, 0.08);
+  }
+
+  html {
+    font-family: var(--font-inter);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .font-heading {
+    font-family: var(--font-plus-jakarta);
+    letter-spacing: -0.02em;
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Background ambient glow orbs */
+body::before {
+  content: '';
+  position: fixed;
+  top: -20vh;
+  left: -20vw;
+  width: 70vw;
+  height: 70vh;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.07) 0%, transparent 60%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  bottom: 10vh;
+  right: -20vw;
+  width: 60vw;
+  height: 60vh;
+  background: radial-gradient(circle, rgba(142, 45, 226, 0.05) 0%, transparent 60%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+@layer components {
+
+  /* ===== Premium Glass Card System ===== */
+  .glow-card {
+    @apply relative rounded-2xl border border-white/10 backdrop-blur-xl overflow-hidden transition-all duration-300;
+    background: rgba(11, 17, 32, 0.8);
+  }
+
+  .glow-card:hover {
+    @apply border-white/20;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Radial glow from top of card */
+  .glow-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -10%;
+    width: 120%;
+    height: 100%;
+    border-radius: 50%;
+    opacity: 0.15;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    z-index: 0;
+  }
+
+  .glow-card:hover::before {
+    opacity: 0.25;
+  }
+
+  /* Glow color variants */
+  .glow-cyan::before {
+    background: radial-gradient(circle, #00d2ff 0%, #3a7bd5 40%, transparent 70%);
+  }
+
+  .glow-purple::before {
+    background: radial-gradient(circle, #8e2de2 0%, #4a00e0 40%, transparent 70%);
+  }
+
+  .glow-emerald::before {
+    background: radial-gradient(circle, #11998e 0%, #38ef7d 40%, transparent 70%);
+  }
+
+  .glow-amber::before {
+    background: radial-gradient(circle, #f12711 0%, #f5af19 40%, transparent 70%);
+  }
+
+  /* Card children stay above glow */
+  .glow-card>* {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ===== Buttons ===== */
+  .btn-sys {
+    @apply inline-flex items-center justify-center font-medium transition-all duration-300 rounded-lg;
+  }
+
+  .btn-primary {
+    @apply text-white py-2.5 px-6 border transition-colors duration-300 bg-transparent;
+    border-color: #3a7bd5;
+  }
+
+  .btn-primary:hover {
+    @apply text-white;
+    background-color: rgba(58, 123, 213, 0.1);
+    border-color: #3a7bd5;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border border-white/10 text-white py-2.5 px-6 backdrop-blur-sm;
+  }
+
+  .btn-secondary:hover {
+    @apply bg-white/5 border-white/20;
+  }
+
+  /* ===== Text Gradients ===== */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+  }
+
+  .text-gradient-cyan {
+    background-image: linear-gradient(135deg, #F8FAFC, #94A3B8);
+    /* Muted white to slate */
+  }
+
+  .text-gradient-emerald {
+    background-image: linear-gradient(135deg, #5EEAD4, #0D9488);
+    /* Muted teal */
+  }
+
+  /* ===== Trust Badges ===== */
+  .badge-dark {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-white/80 backdrop-blur-md;
+  }
+
+  .badge-dark:hover {
+    @apply bg-white/10 border-white/20;
+  }
+}
+
+/* ===== Grid Pattern Overlay ===== */
+.grid-overlay {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  mask-image: radial-gradient(ellipse at center, black 10%, transparent 70%);
+}
+
+/* ===== Stat Counter Animation ===== */
+@keyframes countFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

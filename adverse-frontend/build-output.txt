@@ -1,0 +1,75 @@
+﻿
+> adverse-iq-frontend@0.1.0 build
+> next build
+
+  Γû▓ Next.js 14.2.35
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully
+   Linting and checking validity of types ...
+node.exe : 
+At C:\Program Files\no
+dejs\npm.ps1:29 char:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (:String) [   
+ ], RemoteExceptio    
+n
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+Failed to compile.
+
+./src/app/page.tsx
+4:10  Error: 'Button' 
+is defined but never 
+used.  @typescript-esl
+int/no-unused-vars
+
+./src/components/tree/
+ReasoningTree.tsx
+1:10  Error: 
+'useCallback' is 
+defined but never 
+used.  @typescript-esl
+int/no-unused-vars
+92:76  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esl
+int/no-explicit-any
+93:76  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esl
+int/no-explicit-any
+96:34  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esl
+int/no-explicit-any
+97:34  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esl
+int/no-explicit-any
+
+./src/types/index.ts
+91:20  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esl
+int/no-explicit-any
+
+info  - Need to 
+disable some ESLint 
+rules? Learn more 
+here: https://nextjs.o
+rg/docs/basic-features
+/eslint#disabling-rule
+s
