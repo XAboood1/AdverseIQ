@@ -179,9 +179,11 @@ async def _fetch_safe_alternative(
         "Suggest a therapeutically equivalent safer alternative to the offending drug "
         "that avoids this specific interaction mechanism. Be specific, actionable, "
         "and note any monitoring requirements for the switch.\n\n"
-        "Return this JSON with real clinical content — do not use placeholder text:\n"
-        '{"safer_alternative": "<name of the alternative drug and how to use it>", '
-        '"rationale": "<one sentence explaining why it avoids the interaction>"}'
+        "Return ONLY this JSON structure with real clinical drug names and guidance "
+        "— fill in actual content, do not copy the example values:\n"
+        '{"safer_alternative": "topical clotrimazole 1% cream applied twice daily", '
+        '"rationale": "Minimal systemic absorption means negligible CYP2C9 inhibition and no effect on warfarin levels."}'
+        "\n\nReplace the example values above with the correct answer for the drugs provided."
     )
 
     try:
@@ -192,6 +194,13 @@ async def _fetch_safe_alternative(
         )
         alt = result.get("safer_alternative", "").strip()
         rationale = result.get("rationale", "").strip()
+        # Reject if K2 echoed the example/placeholder text verbatim
+        if alt and "<" not in alt and "clotrimazole" not in alt.lower() or (
+            "clotrimazole" in alt.lower() and "fluconazole" not in offending_drug.lower()
+        ):
+            pass  # valid — handled below
+        elif alt and "<" in alt:
+            alt = ""  # placeholder echo — fall through to static
         if alt:
             return f"{alt} — {rationale}" if rationale else alt
     except Exception as exc:

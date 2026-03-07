@@ -36,6 +36,7 @@
       { "factor": "Timing consistent with interaction onset", "direction": "increases" }
     ],
     "recommendation": "Consider reducing warfarin dose during fluconazole therapy and monitor INR frequently until stable. Escalate care if significant bleeding occurs.",
+    "safe_alternative": "Consider topical clotrimazole or miconazole for superficial fungal infections (minimal systemic absorption, negligible CYP2C9 inhibition). If a systemic antifungal is required, terbinafine carries lower CYP2C9 inhibition risk. If fluconazole is unavoidable, reduce warfarin dose by 30\u201350% and monitor INR every 2\u20133 days until stable.",
     "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
     "db_interaction": {
       "drug_a": "warfarin",
@@ -79,6 +80,7 @@
       { "factor": "Mechanism pharmacologically plausible via CYP3A4/P-gp induction", "direction": "increases", "weight": "medium" }
     ],
     "recommendation": "Stop St. John's Wort and monitor glucose closely. Reassess medication plan and investigate other causes if hyperglycemia persists.",
+    "safe_alternative": "Discontinue St. John's Wort immediately. For mood support without CYP3A4 induction, refer for CBT or discuss a conventional antidepressant with the prescriber \u2014 noting that SSRIs in diabetic patients require glucose monitoring.",
     "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
     "db_interaction": null
   },
@@ -140,6 +142,7 @@
       { "factor": "Literature supports combination risk", "direction": "increases" }
     ],
     "recommendation": "Urgent evaluation is recommended if serotonin toxicity is suspected. Review serotonergic medications and seek immediate clinical assessment based on severity.",
+    "safe_alternative": "Replace tramadol with a non-serotonergic analgesic: acetaminophen for mild-to-moderate pain, or a short-course NSAID if no GI/renal contraindication. Avoid all opioids with serotonergic properties in any patient on an SSRI or SNRI.",
     "disclaimer": "This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.",
     "db_interaction": null
   }
