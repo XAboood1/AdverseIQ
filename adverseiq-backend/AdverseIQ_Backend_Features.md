@@ -19,6 +19,21 @@
 | `api.k2think.ai` / `MBZUAI-IFM/K2-Think-v2` | Standard | Rapid Check, Mechanism Trace |
 | `build-api.k2think.ai` / `MBZUAI-IFM/K2-V2-Instruct` | Agentic | Mystery Solver |
 
+### API Routes
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/health` | Health check — returns `{"status": "ok", "k2_reachable": bool}`. `k2_reachable` probes the standard K2 endpoint with a minimal call. |
+| `GET` | `/api/drugs/search?q=<query>` | Autocomplete drug/herb search. Returns up to 10 matches with `id`, `displayName`, `genericName`, `isHerb`. |
+| `GET` | `/api/pubmed/search?drugs=<comma-list>&max_results=<1-10>` | Direct PubMed search for a comma-separated drug list. Returns `pmid`, `title`, `abstract_snippet`, `year`, `url`. Results are cached per drug pair. |
+| `POST` | `/api/analyze` | Non-streaming analysis (all three strategies). |
+| `POST` | `/api/analyze/stream` | SSE streaming analysis (Mystery Solver only). |
+| `GET` | `/api/cases/{id}` | Pre-baked demo cases (`warfarin`, `stjohnswort`, `serotonin`). |
+| `POST` | `/api/export/pdf` | PDF report download. |
+| `POST` | `/api/export/json` | JSON export with metadata envelope. |
+| `POST` | `/api/analyses` | Save analysis to Supabase. |
+| `GET` | `/api/analyses/{id}` | Retrieve saved analysis by UUID. |
+
 ---
 
 ## Analysis Strategies
@@ -65,7 +80,7 @@ K2 calls these tools autonomously during its investigation. You execute them; K2
 
 **Parallel tool calls** — K2 may call multiple tools in a single turn (e.g. `lookup_drug_interaction` and `get_drug_class` simultaneously). All are executed and returned before K2 continues.
 
-**Agent loop** — runs up to 8 turns. Tool-call turns use the standard endpoint; the final answer turn switches to JSON mode + logprobs, with tools array omitted.
+**Agent loop** — runs up to **5 turns** (`MAX_TURNS = 5`). Tool-call turns use the agentic endpoint with tools array; the final answer turn switches to JSON mode + logprobs, with tools array **omitted entirely** (`tool_choice: "none"` is broken on build-api — omitting the array is the correct pattern).
 
 **`tools_used`** — list of tool names K2 called is returned in the AnalysisResult. Displayed in the frontend Investigation tab.
 
@@ -73,12 +88,13 @@ K2 calls these tools autonomously during its investigation. You execute them; K2
 
 ## Confidence Engine
 
-K2 is the source of truth for the confidence score. The engine does not modify the score.
+K2 is the source of truth for the confidence score. The engine **passes K2's score through unchanged** — it does not blend it with rule-based factor weights (the previous 70/30 blend was removed; it was adding a near-constant offset using hardcoded `True` flags, which was false precision).
 
 ### Score
 - Comes directly from K2's output
-- On Mystery Solver (non-streaming): logprob calibration may discount it before it reaches the engine
+- On Mystery Solver (non-streaming): logprob calibration may discount it **before** it reaches the confidence engine
 - On Rapid Check and Mechanism Trace: K2's raw score, passed through unchanged
+- The engine generates **annotations only** — it does not apply point weights or modify the numeric score
 
 ### Logprob Calibration (Mystery Solver non-streaming only)
 Measures how certain the model actually was when it wrote the confidence number.
@@ -171,6 +187,20 @@ SSE event stream from `POST /api/analyze/stream`.
 
 ---
 
+## JSON Repair Pipeline (Standard Endpoint)
+
+Used by Rapid Check and Mechanism Trace. Applied in order — stops at first success:
+
+1. Strip `<think>...</think>` tags from response
+2. Extract JSON from markdown code fences
+3. Stack-match `{...}` braces to isolate the first complete object
+4. Repair trailing commas before `}` or `]`
+5. Close unclosed `[` and `{` structures
+6. If parse still fails — **self-repair call**: K2 is asked to fix its own malformed output (second API call to standard endpoint)
+7. If self-repair fails — use `demo_fallback` if provided, otherwise raise
+
+---
+
 ## Data Pipeline
 
 | Data source | What it provides | Fallback |
@@ -190,40 +220,82 @@ SSE event stream from `POST /api/analyze/stream`.
 
 | Feature | Endpoint | Notes |
 |---|---|---|
-| PDF report | `POST /api/export/pdf` | Server-side render via WeasyPrint + Jinja2; includes all result fields, urgency banner, causal chain or hypothesis cards, safe alternative, disclaimer |
-| JSON export | `POST /api/export/json` | Metadata envelope (timestamp, analysis_id, version) + full AnalysisResult; also available client-side without calling the backend |
-| Save analysis | `POST /api/analyses` | Persists to Supabase; returns `analysis_id` |
-| Retrieve analysis | `GET /api/analyses/{id}` | Full request + result; used for PDF re-generation |
+| PDF report | `POST /api/export/pdf` | Server-side render via WeasyPrint + Jinja2; includes all result fields, urgency banner, causal chain or hypothesis cards, safe alternative, disclaimer. Filename: `AdverseIQ_Report_{id}_{YYYYMMDD}.pdf`. |
+| JSON export | `POST /api/export/json` | Metadata envelope (`export_timestamp`, `analysis_id`, `adverseiq_version: "1.0.0"`, `disclaimer`) + full AnalysisResult. Filename: `AdverseIQ_Analysis_{id}_{YYYYMMDD}.json`. |
+| Save analysis | `POST /api/analyses` | Persists to Supabase (`analyses` table); stores `strategy`, `urgency`, `input_data`, `result_data`. Returns `{"analysis_id": uuid}`. Returns 503 if Supabase not configured. |
+| Retrieve analysis | `GET /api/analyses/{id}` | Returns `analysis_id`, `created_at`, `strategy`, `urgency`, `request`, `result`. Returns 400 on invalid UUID, 404 if not found. |
 | Pre-baked demos | `GET /api/cases/{id}` | IDs: `warfarin`, `stjohnswort`, `serotonin` |
 
 ---
 
-## New AnalysisResult Fields (vs original plan)
+## AnalysisResult TypeScript Interface
 
-Fields added that Person B needs in the TypeScript types:
+Complete shape returned by all three strategies:
 
 ```typescript
 interface AnalysisResult {
-  // All original fields unchanged, plus:
+  strategy: "rapid" | "mechanism" | "hypothesis";
+  urgency: "routine" | "urgent" | "emergent";
+  urgency_reason: string;
+  overall_confidence: number;           // 0–100; K2's score, logprob-calibrated on Mystery Solver
+  confidence_factors: {                 // Annotation labels for the UI
+    factor: string;
+    direction: "increases" | "decreases";
+    weight?: "high" | "medium" | "low";
+  }[];
+  recommendation: string;
+  disclaimer: string;
 
+  // Rapid Check + Mechanism Trace
+  interaction_found?: boolean;          // Rapid Check only
+  mechanism?: string;                   // Rapid Check only
+  causal_steps?: {                      // Both Rapid Check (1 step) and Mechanism Trace
+    step: number;
+    mechanism: string;
+    expected_finding: string;
+    evidence: string;
+    source: "database" | "literature" | "mechanism";
+  }[];
+  db_interaction?: object | null;       // First matching DB record; null on Mystery Solver
+
+  // Mystery Solver only
+  hypotheses?: {
+    id: string;                         // e.g. "H1", "H2"
+    description: string;
+    mechanism: string;
+    confidence: number;
+    supporting_evidence: string[];
+    rejecting_evidence: string[];
+    status: "supported" | "possible" | "rejected";
+    evidence_source: "database" | "literature" | "mechanism";
+    pubmed_refs: string[];              // PMIDs
+  }[];
+  top_hypothesis?: string;             // e.g. "H1"
+  tree_nodes?: object[];               // React Flow nodes for hypothesis tree
+  tree_edges?: object[];               // React Flow edges for hypothesis tree
+  // Note: hypotheses with confidence < 15 are pruned from the tree (but still in `hypotheses`)
+
+  // All strategies
   safe_alternative?: string;
   // K2-generated safer substitute suggestion.
-  // Present on all three strategies if an interaction was identified.
-  // Display in RecommendationCard below main recommendation,
-  // in a green-tinted section labelled "Safer Alternative Considered".
+  // Display in RecommendationCard in a green-tinted section labelled
+  // "Safer Alternative Considered".
 
   tools_used?: string[];
-  // Mystery Solver only. Tool names K2 called during investigation.
+  // Mystery Solver only. Tool names K2 called, in call order.
   // e.g. ["lookup_drug_interaction", "get_drug_class", "search_pubmed", "get_safe_alternative"]
   // Display in EvidencePanel as "Investigation" tab.
 }
 ```
 
-New optional request field:
+Request shape:
 
 ```typescript
 interface AnalysisRequest {
-  // All original fields unchanged, plus:
+  medications: { displayName: string; [key: string]: any }[];
+  symptoms: { description: string; [key: string]: any }[];
+  patientContext?: object;
+  strategy: "rapid" | "mechanism" | "hypothesis";
 
   recentlyAdded?: string;
   // Generic name of a drug recently added or changed.
@@ -232,6 +304,16 @@ interface AnalysisRequest {
   // "This medication was recently added or changed"
 }
 ```
+
+### Hypothesis Tree (Mystery Solver)
+
+`tree_nodes` and `tree_edges` are pre-built React Flow graph data returned in the Mystery Solver result.
+
+- Root node type: `patientNode` — represents the patient case
+- Hypothesis node types: `hypothesisNode` (supported/possible) or `rejectedNode`
+- Mechanism node type: `mechanismNode` — supporting mechanism steps
+- Node color: green (`#16A34A`) ≥ 70%, amber (`#D97706`) ≥ 40%, gray < 40% or rejected
+- **Pruning**: hypotheses with `confidence < 15` are excluded from the tree nodes/edges (but remain in the `hypotheses` array)
 
 ---
 
