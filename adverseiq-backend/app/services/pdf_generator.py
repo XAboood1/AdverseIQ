@@ -243,12 +243,24 @@ class _Report(FPDF):
         W = self.CONTENT_W
 
         for step in steps:
-            if self.get_y() > 260:
+            if self.get_y() > 250:
                 self.add_page()
 
+            # Estimate content height before drawing background
+            mechanism = step.get("mechanism", "")
+            finding = step.get("expected_finding", "")
+            evidence = step.get("evidence", "")
+            # Rough height estimate: header row + mechanism lines + finding + evidence
+            est_lines = max(1, len(mechanism) // 70 + 1)
+            if finding:
+                est_lines += max(1, len(finding) // 70 + 1)
+            if evidence:
+                est_lines += max(1, len(evidence) // 80 + 1)
+            box_h = max(18, est_lines * 4.5 + 8)
+
             y = self.get_y()
-            self._filled_rect(M, y, 2, 18, C_BLUE)
-            self._filled_rect(M + 2, y, W - 2, 18, C_STEP_BG)
+            self._filled_rect(M, y, 2, box_h, C_BLUE)
+            self._filled_rect(M + 2, y, W - 2, box_h, C_STEP_BG)
 
             self.set_xy(M + 4, y + 1.5)
             self.set_font("Helvetica", style="B", size=8)
@@ -262,13 +274,11 @@ class _Report(FPDF):
             self.set_x(M + 4)
             self.set_font("Helvetica", style="B", size=8.5)
             self._set_rgb(C_BLACK, "text")
-            self.multi_cell(W - 8, 4.5, step.get("mechanism", ""))
+            self.multi_cell(W - 8, 4.5, mechanism)
 
             self.set_x(M + 4)
             self.set_font("Helvetica", size=8)
             self._set_rgb(C_SLATE, "text")
-            finding = step.get("expected_finding", "")
-            evidence = step.get("evidence", "")
             if finding:
                 self.multi_cell(W - 8, 4, f"Finding: {finding}")
             if evidence:
@@ -276,7 +286,8 @@ class _Report(FPDF):
                 self.set_font("Helvetica", style="I", size=7.5)
                 self.multi_cell(W - 8, 4, evidence)
 
-            self.ln(2)
+            self.set_xy(M, y + box_h + 2)
+            self.ln(1)
             self._set_rgb(C_BLACK, "text")
 
     def render_hypotheses(self, hypotheses: list):
@@ -326,6 +337,27 @@ class _Report(FPDF):
             self.set_xy(M, y + 29)
             self.ln(2)
             self._set_rgb(C_BLACK, "text")
+
+    def render_safe_alternative(self, text: str):
+        if not text:
+            return
+        self._section_title("Safer Alternative Considered")
+        M = self.MARGIN
+        W = self.CONTENT_W
+        y = self.get_y()
+        lines = max(1, len(text) // 75 + 1)
+        h = lines * 5.5 + 10
+        self._filled_rect(M, y, W, h, (236, 253, 245), (167, 243, 208))
+        self.set_xy(M + 5, y + 4)
+        self.set_font("Helvetica", style="B", size=8)
+        self._set_rgb((6, 95, 70), "text")
+        self.cell(W - 10, 5, "Safer Alternative", new_x="LMARGIN", new_y="NEXT")
+        self.set_x(M + 5)
+        self.set_font("Helvetica", size=9)
+        self._set_rgb(C_NAVY, "text")
+        self.multi_cell(W - 10, 5.5, text)
+        self.set_xy(M, y + h + 2)
+        self._set_rgb(C_BLACK, "text")
 
     def render_recommendation(self, text: str):
         if not text:
@@ -410,6 +442,7 @@ class PDFGenerator:
         )
         pdf.render_hypotheses(result.get("hypotheses", []))
         pdf.render_causal_steps(result.get("causal_steps", []))
+        pdf.render_safe_alternative(result.get("safe_alternative", ""))
         pdf.render_recommendation(result.get("recommendation", ""))
         pdf.render_disclaimer(result.get("disclaimer", ""))
         pdf.render_footer()
