@@ -194,13 +194,10 @@ async def _fetch_safe_alternative(
         )
         alt = result.get("safer_alternative", "").strip()
         rationale = result.get("rationale", "").strip()
-        # Reject if K2 echoed the example/placeholder text verbatim
-        if alt and "<" not in alt and "clotrimazole" not in alt.lower() or (
-            "clotrimazole" in alt.lower() and "fluconazole" not in offending_drug.lower()
-        ):
-            pass  # valid — handled below
-        elif alt and "<" in alt:
-            alt = ""  # placeholder echo — fall through to static
+        # Reject any response that still contains angle-bracket placeholders
+        if "<" in alt or ">" in alt or "<" in rationale or ">" in rationale:
+            alt = ""
+            rationale = ""
         if alt:
             return f"{alt} — {rationale}" if rationale else alt
     except Exception as exc:
