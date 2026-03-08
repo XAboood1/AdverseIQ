@@ -132,6 +132,7 @@ class _Report(FPDF):
         self.ln(3)
 
     def _kv_row(self, key: str, value: str):
+        self.set_x(self.MARGIN)  # always reset — multi_cell does not guarantee x reset in fpdf2 2.7.x
         self.set_font("Helvetica", style="B", size=9)
         self._set_rgb(C_SLATE, "text")
         self.cell(42, 6, key, new_x="RIGHT", new_y="TOP")
@@ -200,10 +201,14 @@ class _Report(FPDF):
         self._set_rgb(C_BLACK, "text")
         self.ln(2)
 
-    def render_patient_summary(self, meds_str: str, symptoms_str: str, context_str: str):
+    def render_patient_summary(self, meds_str: str, symptoms_str: str, context_str: str,
+                                strategy_label: str = "", recently_added: str = ""):
         self._section_title("Patient Summary")
+        self._kv_row("Analysis Mode", strategy_label)
         self._kv_row("Medications", meds_str)
         self._kv_row("Symptoms", symptoms_str)
+        if recently_added:
+            self._kv_row("Recently Added", recently_added)
         if context_str:
             self._kv_row("Patient Context", context_str)
 
@@ -435,7 +440,11 @@ class PDFGenerator:
             result.get("urgency", "routine"),
             result.get("urgency_reason", ""),
         )
-        pdf.render_patient_summary(meds_str, symptoms_str, _patient_context_str(patient_context))
+        pdf.render_patient_summary(
+            meds_str, symptoms_str, _patient_context_str(patient_context),
+            strategy_label=strategy_label,
+            recently_added=request.get("recentlyAdded", "") or "",
+        )
         pdf.render_confidence(
             result.get("overall_confidence", 0),
             result.get("confidence_factors", []),
