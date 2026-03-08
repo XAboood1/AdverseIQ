@@ -33,7 +33,7 @@ export default function AnalyzePage() {
                 { id: '2', displayName: "St. John's Wort", genericName: 'st johns wort', isHerb: true }
             ]);
             setSymptoms([{ id: 's1', description: 'Spiking Hyperglycemia', severity: 'severe' }]);
-            setStrategy('hypothesis');
+            setStrategy('mechanism');
         } else if (id === 'demo_3') {
             setMedications([
                 { id: '1', displayName: 'Tramadol', genericName: 'tramadol' },

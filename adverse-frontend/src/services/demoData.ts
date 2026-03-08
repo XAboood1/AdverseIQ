@@ -54,6 +54,7 @@ export const demoCases: Record<string, AnalysisResult> = {
             source: 'DrugBank API'
         },
         recommendation: 'Reduce Warfarin dose by 30-50% immediately. Monitor INR frequently (every 1-2 days) while on concurrent fluconazole therapy and adjust warfarin dose as needed.',
+        safe_alternative: 'Consider topical clotrimazole or miconazole for superficial fungal infections (minimal systemic absorption, negligible CYP2C9 inhibition). If a systemic antifungal is required, terbinafine carries lower CYP2C9 inhibition risk. If fluconazole is unavoidable, reduce warfarin dose by 30–50% and monitor INR every 2–3 days until stable.',
         disclaimer: 'This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.',
         confidence_factors: [
             { factor: 'Known Database Interaction Found', direction: 'increases' },
@@ -140,6 +141,7 @@ export const demoCases: Record<string, AnalysisResult> = {
             { id: 'e-root-h3', source: 'root', target: 'h3', style: { stroke: '#64748b', strokeWidth: 1, strokeDasharray: '5,5' } }
         ],
         recommendation: 'Discontinue St. John\'s Wort immediately. Monitor blood glucose closely over the next 7-14 days as induction effects wash out. Metformin dose adjustment likely not necessary once SJW is cleared.',
+        safe_alternative: 'Discontinue St. John\'s Wort immediately. For mood support without CYP3A4 induction, refer for CBT or discuss a conventional antidepressant with the prescriber — noting that SSRIs in diabetic patients require glucose monitoring.',
         disclaimer: 'This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.',
         confidence_factors: [
             { factor: 'Literature support from recent 2024 case report', direction: 'increases' },
@@ -216,6 +218,7 @@ export const demoCases: Record<string, AnalysisResult> = {
             { id: 'e-root-h3', source: 'root', target: 'h3', style: { stroke: '#64748b', strokeWidth: 1, strokeDasharray: '5,5' } }
         ],
         recommendation: 'Immediate Emergency Department evaluation is required. Discontinue both Tramadol and Sertraline immediately. Administer serotonin antagonists (e.g., Cyproheptadine) and provide supportive care for hyperthermia and autonomic instability.',
+        safe_alternative: 'Replace tramadol with a non-serotonergic analgesic: acetaminophen for mild-to-moderate pain, or a short-course NSAID if no GI/renal contraindication. Avoid all opioids with serotonergic properties in any patient on an SSRI or SNRI.',
         disclaimer: 'This is clinical decision support, not a substitute for medical judgment. Confirm all findings clinically before acting.',
         confidence_factors: [
             { factor: 'Multiple independent serotonergic agents present (+)', direction: 'increases' },
