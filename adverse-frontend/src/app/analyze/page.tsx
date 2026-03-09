@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { analyzeCase } from '@/services/api';
-import { AnalysisRequest, Medication, Symptom, PatientContext, AnalysisStrategy } from '@/types';
+import { AnalysisRequest, Medication, Symptom, PatientContext, AnalysisStrategy, CausalStep } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ActivitySquare, GitBranch, Network, AlertOctagon, CheckCircle, AlertTriangle, Download, FileText, ArrowLeft, Plus } from 'lucide-react';
 import ReasoningTree from '@/components/tree/ReasoningTree';
@@ -112,7 +112,7 @@ export default function AnalyzePage() {
                                         <span className="text-white/80 font-medium">{ev}</span>
                                     </div>
                                 ))
-                                : result.causal_steps?.map((step: any, i: number) => (
+                                : result.causal_steps?.map((step: CausalStep, i: number) => (
                                     <div key={i} className="flex gap-3 items-start text-sm">
                                         <CheckCircle className="text-emerald-400 shrink-0 h-4 w-4 mt-0.5" />
                                         <div className="flex flex-col">
