@@ -3,17 +3,18 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { analyzeCase } from '@/services/api';
-import { AnalysisRequest, Medication, Symptom, PatientContext, AnalysisStrategy, CausalStep } from '@/types';
+import { AnalysisRequest, Medication, Symptom, PatientContext, AnalysisStrategy } from '@/types';
 import { Button } from '@/components/ui/button';
-import { ActivitySquare, GitBranch, Network, AlertOctagon, CheckCircle, AlertTriangle, Download, FileText, ArrowLeft, Plus } from 'lucide-react';
+import { ActivitySquare, GitBranch, Network, AlertOctagon, CheckCircle, AlertTriangle, FileText, ArrowLeft, Plus, Star } from 'lucide-react';
 import ReasoningTree from '@/components/tree/ReasoningTree';
 import ThinkingStream from '@/components/streaming/ThinkingStream';
 
 export default function AnalyzePage() {
     const [medications, setMedications] = useState<Medication[]>([]);
     const [symptoms, setSymptoms] = useState<Symptom[]>([]);
-    const [patientContext] = useState<PatientContext>({});
+    const [patientContext, setPatientContext] = useState<PatientContext>({});
     const [strategy, setStrategy] = useState<AnalysisStrategy>('hypothesis');
+    const [recentlyAddedId, setRecentlyAddedId] = useState<string | undefined>();
 
     const { mutate: runAnalysis, data: result, isPending } = useMutation({
         mutationFn: (req: AnalysisRequest) => analyzeCase(req),
@@ -50,7 +51,40 @@ export default function AnalyzePage() {
 
     const handleAnalyze = () => {
         if (medications.length < 2 || symptoms.length < 1) return;
-        runAnalysis({ medications, symptoms, patientContext, strategy });
+        runAnalysis({ medications, symptoms, patientContext, strategy, recentlyAdded: recentlyAddedId });
+    };
+
+    const handleExportPDF = async () => {
+        try {
+            const exportData = {
+                request: {
+                    medications,
+                    symptoms,
+                    patientContext,
+                    strategy,
+                    recentlyAdded: recentlyAddedId
+                },
+                result
+            };
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://adverseiq.onrender.com'}/api/export/pdf`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(exportData)
+            });
+            if (!response.ok) throw new Error('Export failed');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'AdverseIQ_Report.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('PDF Export Error:', error);
+            alert('Failed to export PDF');
+        }
     };
 
     // ===== RESULT VIEW =====
@@ -64,11 +98,8 @@ export default function AnalyzePage() {
                         New Analysis
                     </Button>
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => alert('PDF Report exported (Mock)')} className="border-white/10 text-white/80 bg-white/5 hover:bg-white/10 hover:text-white">
+                        <Button variant="outline" onClick={handleExportPDF} className="border-white/10 text-white/80 bg-white/5 hover:bg-white/10 hover:text-white transition-all">
                             <FileText className="mr-2 h-4 w-4" /> Export PDF
-                        </Button>
-                        <Button variant="outline" onClick={() => alert('JSON exported (Mock)')} className="border-white/10 text-white/80 bg-white/5 hover:bg-white/10 hover:text-white">
-                            <Download className="mr-2 h-4 w-4" /> Export JSON
                         </Button>
                     </div>
                 </div>
@@ -89,7 +120,7 @@ export default function AnalyzePage() {
 
                 {/* Top Hypothesis & Confidence Dashboard */}
                 <div className="grid md:grid-cols-5 gap-6">
-                    <div className="md:col-span-3 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10 flex flex-col">
+                    <div className="md:col-span-3 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10 flex flex-col">
                         <div className="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-3">
                             {result.strategy === 'hypothesis' ? 'Primary Hypothesis' : 'Identified Mechanism'}
                         </div>
@@ -112,7 +143,8 @@ export default function AnalyzePage() {
                                         <span className="text-white/80 font-medium">{ev}</span>
                                     </div>
                                 ))
-                                : result.causal_steps?.map((step: CausalStep, i: number) => (
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                : result.causal_steps?.map((step: any, i: number) => (
                                     <div key={i} className="flex gap-3 items-start text-sm">
                                         <CheckCircle className="text-emerald-400 shrink-0 h-4 w-4 mt-0.5" />
                                         <div className="flex flex-col">
@@ -123,9 +155,23 @@ export default function AnalyzePage() {
                                 ))
                             }
                         </div>
+
+                        {result.strategy === 'hypothesis' && result.hypotheses?.[0]?.pubmed_refs && result.hypotheses[0].pubmed_refs.length > 0 && (
+                            <div className="mt-5 pt-5 border-t border-white/10">
+                                <div className="text-xs font-bold uppercase tracking-widest text-white/50 mb-3">Supporting Literature</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {result.hypotheses[0].pubmed_refs.map((ref: string) => (
+                                        <a key={ref} href={`https://pubmed.ncbi.nlm.nih.gov/${ref}/`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors text-blue-400 text-xs font-semibold">
+                                            <FileText className="h-3.5 w-3.5" />
+                                            PMID: {ref}
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="md:col-span-2 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10 flex flex-col items-center justify-center">
+                    <div className="md:col-span-2 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10 flex flex-col items-center justify-center">
                         <div className="text-xs font-bold uppercase tracking-widest text-white/60 mb-5 w-full text-center pb-3 border-b border-white/10">Confidence Score</div>
                         <div className="relative flex items-center justify-center w-48 h-48 mb-6">
                             {/* Pulse ring */}
@@ -171,9 +217,16 @@ export default function AnalyzePage() {
                     </div>
                 </div>
 
+                {/* Reasoning Trace output for Strategy */}
+                {(result.strategy === 'hypothesis') && (
+                    <div className="mt-8">
+                        <ThinkingStream isComplete={true} medications={medications} symptoms={symptoms} result={result} />
+                    </div>
+                )}
+
                 {/* Interactive Reasoning Tree Visualizer */}
                 {result.tree_nodes && result.tree_edges && (
-                    <div className="w-full mt-8 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10">
+                    <div className="w-full mt-8 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10">
                         <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/10">
                             <h3 className="text-xl font-heading font-bold text-white flex items-center gap-2">
                                 <Network className="text-cyan-400" /> Parallel Reasoning Tree
@@ -194,7 +247,7 @@ export default function AnalyzePage() {
 
                 {/* Investigation Panel */}
                 {result.tools_used && result.tools_used.length > 0 && (
-                    <div className="w-full mb-8 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10">
+                    <div className="w-full mb-8 bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10">
                         <h3 className="text-lg font-heading font-bold text-white mb-3 flex items-center gap-2">
                             <ActivitySquare className="h-5 w-5 text-cyan-400" />
                             Autonomous Investigation
@@ -211,7 +264,7 @@ export default function AnalyzePage() {
                 )}
 
                 {/* Recommendation Panel */}
-                <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10 border-l-4 border-l-cyan-400">
+                <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10 border-l-4 border-l-cyan-400">
                     <h3 className="text-lg font-heading font-bold text-white mb-3 flex items-center gap-2">
                         <CheckCircle className="h-5 w-5 text-cyan-400" />
                         Clinical Recommendation
@@ -264,7 +317,7 @@ export default function AnalyzePage() {
             </div>
 
             {/* Medications Card */}
-            <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10">
+            <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10">
                 <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
                     <h3 className="text-lg font-heading font-bold text-white">Current Medications</h3>
                     <span className="text-xs font-bold uppercase tracking-widest text-white/50 bg-white/5 px-2.5 py-1 rounded border border-white/10">Required: 2+</span>
@@ -300,6 +353,18 @@ export default function AnalyzePage() {
                                         <label className="text-xs font-bold uppercase tracking-widest text-white/50 block mb-1.5 ml-1">Dose (Optional)</label>
                                         <input type="text" className="w-full p-2.5 border border-white/10 rounded-lg bg-white/[0.05] text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/50 transition-all placeholder:text-white/30" placeholder="e.g. 5mg" />
                                     </div>
+                                    <div className="flex items-center pt-6 px-2">
+                                        <button
+                                            className={`px-3 py-2 flex items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-all border ${recentlyAddedId === med.id
+                                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 hover:bg-amber-500/30'
+                                                : 'bg-[#0B1120] text-white/40 border-white/10 hover:border-white/20 hover:text-white/70'
+                                                }`}
+                                            onClick={() => setRecentlyAddedId(recentlyAddedId === med.id ? undefined : med.id)}
+                                        >
+                                            <Star className={`h-3.5 w-3.5 ${recentlyAddedId === med.id ? 'fill-amber-400' : ''}`} />
+                                            Recent
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -323,7 +388,7 @@ export default function AnalyzePage() {
             </div>
 
             {/* Symptoms Card */}
-            <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-7 border border-white/10">
+            <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10">
                 <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
                     <h3 className="text-lg font-heading font-bold text-white">Presenting Symptoms</h3>
                     <span className="text-xs font-bold uppercase tracking-widest text-white/50 bg-white/5 px-2.5 py-1 rounded border border-white/10">Required: 1+</span>
@@ -380,6 +445,54 @@ export default function AnalyzePage() {
                 >
                     <Plus className="h-4 w-4" /> Add Symptom Entry
                 </button>
+            </div>
+
+            {/* Patient Information Card */}
+            <div className="bg-[#0B1120]/80 backdrop-blur-xl rounded-xl p-5 border border-white/10">
+                <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
+                    <h3 className="text-lg font-heading font-bold text-white">Patient Context</h3>
+                    <span className="text-xs font-bold uppercase tracking-widest text-white/50 bg-white/5 px-2.5 py-1 rounded border border-white/10">Optional</span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-5 mb-2">
+                    <div>
+                        <label className="text-xs font-bold uppercase tracking-widest text-white/50 block mb-1.5 ml-1">Age</label>
+                        <input
+                            type="number"
+                            value={patientContext.age || ''}
+                            onChange={(e) => setPatientContext({ ...patientContext, age: parseInt(e.target.value) || undefined })}
+                            className="w-full p-2.5 border border-white/10 rounded-lg bg-white/[0.05] text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/50 transition-all placeholder:text-white/30"
+                            placeholder="e.g. 64"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold uppercase tracking-widest text-white/50 block mb-1.5 ml-1">Sex</label>
+                        <select
+                            value={patientContext.sex || ''}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            onChange={(e) => setPatientContext({ ...patientContext, sex: (e.target.value as 'M' | 'F' | 'Other') || undefined })}
+                            className="w-full p-2.5 border border-white/10 rounded-lg bg-white/[0.05] text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/50 transition-all"
+                        >
+                            <option value="" className="bg-[#0B1120] text-white/50">Select Sex</option>
+                            <option value="M" className="bg-[#0B1120] text-white">Male</option>
+                            <option value="F" className="bg-[#0B1120] text-white">Female</option>
+                            <option value="Other" className="bg-[#0B1120] text-white">Other</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-4 mt-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-white/70 hover:text-cyan-400 transition-colors">
+                        <input type="checkbox" checked={patientContext.renalImpairment || false} onChange={(e) => setPatientContext({ ...patientContext, renalImpairment: e.target.checked })} className="rounded bg-white/5 border-white/20 text-cyan-500 focus:ring-cyan-500/50" />
+                        Renal Impairment
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-white/70 hover:text-cyan-400 transition-colors">
+                        <input type="checkbox" checked={patientContext.hepaticImpairment || false} onChange={(e) => setPatientContext({ ...patientContext, hepaticImpairment: e.target.checked })} className="rounded bg-white/5 border-white/20 text-cyan-500 focus:ring-cyan-500/50" />
+                        Hepatic Impairment
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-white/70 hover:text-cyan-400 transition-colors">
+                        <input type="checkbox" checked={patientContext.pregnant || false} onChange={(e) => setPatientContext({ ...patientContext, pregnant: e.target.checked })} className="rounded bg-white/5 border-white/20 text-cyan-500 focus:ring-cyan-500/50" />
+                        Pregnant
+                    </label>
+                </div>
             </div>
 
             {/* Strategy Selector */}
@@ -442,7 +555,7 @@ export default function AnalyzePage() {
             <div className="pt-6 border-t border-white/10">
                 {isPending && strategy === 'hypothesis' ? (
                     <div className="bg-[#0B1120]/80 rounded-xl p-6 border border-cyan-400/20 ring-1 ring-cyan-400/10 shadow-[0_0_30px_-6px_rgba(0,210,255,0.2)]">
-                        <ThinkingStream isComplete={!!result} />
+                        <ThinkingStream isComplete={!!result} medications={medications} symptoms={symptoms} result={result} />
                     </div>
                 ) : (
                     <>

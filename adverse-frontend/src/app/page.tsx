@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { ActivitySquare, Network, Shield, BookOpen, GitBranch, ArrowRight, CheckCircle2, FileSearch } from "lucide-react";
+import { ActivitySquare, Network, Shield, BookOpen, GitBranch, ArrowRight, CheckCircle2 } from "lucide-react";
 import { motion, useInView, animate } from "framer-motion";
 import { useRef, useEffect, useState } from "react";
 
@@ -464,33 +464,6 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Citation Preview */}
-          <motion.div
-            className="mt-16 glow-card p-8 max-w-2xl mx-auto"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-          >
-            <div className="flex items-center gap-2 mb-5">
-              <FileSearch className="h-5 w-5 text-cyan-400" />
-              <h4 className="font-heading font-bold text-sm text-white">Citation Preview</h4>
-            </div>
-            <div className="space-y-3">
-              {[
-                { title: "Fluconazole-Warfarin Interaction via CYP2C9 Inhibition", source: "PubMed PMID: 38291034", year: "2024" },
-                { title: "Herbal-Drug Interactions: St. John's Wort and Metformin", source: "DrugBank DB00331", year: "2024" },
-              ].map((cite, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.03] border border-white/5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-white/80">{cite.title}</p>
-                    <p className="text-xs text-white/40 mt-0.5">{cite.source} · {cite.year}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
         </div>
       </AnimatedSection>
 
