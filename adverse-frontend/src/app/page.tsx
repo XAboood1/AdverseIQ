@@ -6,7 +6,7 @@ import { motion, useInView, animate } from "framer-motion";
 import { useRef, useEffect, useState } from "react";
 
 /* ====== Animated Counter Component ====== */
-function AnimatedCounter({ target, suffix = '', duration = 2 }: { target: number; suffix?: string; duration?: number }) {
+function AnimatedCounter({ target, prefix = '', suffix = '', duration = 2 }: { target: number; prefix?: string; suffix?: string; duration?: number }) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const isInView = useInView(ref, { once: true, margin: "-50px" });
@@ -21,7 +21,7 @@ function AnimatedCounter({ target, suffix = '', duration = 2 }: { target: number
     return () => controls.stop();
   }, [isInView, target, duration]);
 
-  return <span ref={ref}>{count.toLocaleString()}{suffix}</span>;
+  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
 }
 
 /* ====== Custom Dark Mode AI Reasoning Tree SVG ====== */
@@ -273,9 +273,9 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { value: 100, suffix: 'K+', label: 'Deaths/year from adverse drug events', sublabel: 'in the US alone (FDA / WHO)' },
-              { value: 40, suffix: '%', label: 'Missed by treating physicians', sublabel: 'due to complex polypharmacy' },
-              { value: 3, suffix: ' min', label: 'Average reasoning time', sublabel: 'vs 30 min manual chart review' },
+              { prefix: '', value: 250, suffix: ',000+', label: 'Deaths/year from adverse drug events', sublabel: 'in the US alone (ASP 2025)' },
+              { prefix: '', value: 85, suffix: '-95%', label: 'Missed by treating physicians', sublabel: 'without automated surveillance systems' },
+              { prefix: '', value: 90, suffix: '%+', label: 'Alert override rate', sublabel: 'due to lack of clinical reasoning context' },
             ].map((stat, i) => (
               <motion.div
                 key={i}
@@ -286,7 +286,7 @@ export default function Home() {
                 transition={{ delay: i * 0.15, duration: 0.5 }}
               >
                 <div className="font-heading text-4xl md:text-5xl font-bold text-white mb-2">
-                  <AnimatedCounter target={stat.value} suffix={stat.suffix} />
+                  <AnimatedCounter target={stat.value} prefix={stat.prefix} suffix={stat.suffix} />
                 </div>
                 <p className="font-semibold text-white/80 text-sm">{stat.label}</p>
                 <p className="text-xs text-white/40 mt-1">{stat.sublabel}</p>

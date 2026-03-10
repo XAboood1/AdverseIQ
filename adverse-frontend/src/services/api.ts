@@ -41,6 +41,62 @@ export const analyzeCase = async (request: AnalysisRequest): Promise<AnalysisRes
     }
 };
 
+/**
+ * Stream a Mystery Solver analysis via SSE.
+ * Calls `onEvent` for each SSE event received.
+ * Returns an abort function to cancel mid-stream.
+ */
+export function streamAnalyzeCase(
+    request: AnalysisRequest,
+    onEvent: (eventType: string, data: string) => void
+): { abort: () => void } {
+    const controller = new AbortController();
+
+    (async () => {
+        try {
+            const response = await fetch(`${getApiBaseUrl()}/api/analyze/stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(request),
+                signal: controller.signal,
+            });
+
+            if (!response.ok || !response.body) {
+                onEvent('error', `Stream failed: ${response.status}`);
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() ?? '';
+
+                for (const block of parts) {
+                    let eventType = 'message';
+                    let dataLine = '';
+                    for (const line of block.split('\n')) {
+                        if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+                        else if (line.startsWith('data: ')) dataLine = line.slice(6).trim();
+                    }
+                    if (dataLine) onEvent(eventType, dataLine);
+                }
+            }
+        } catch (e: unknown) {
+            if (e instanceof Error && e.name !== 'AbortError') {
+                onEvent('error', e.message);
+            }
+        }
+    })();
+
+    return { abort: () => controller.abort() };
+}
+
 export const loadDemoCase = async (id: 'demo_1' | 'demo_2' | 'demo_3'): Promise<AnalysisResult> => {
     const backendIdMap: Record<string, string> = {
         'demo_1': 'warfarin',

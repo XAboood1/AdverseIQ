@@ -4,14 +4,12 @@ export interface Medication {
   genericName: string;
   dose?: string;
   frequency?: 'once daily' | 'twice daily' | 'three times daily' | 'as needed' | 'other';
-  startDate?: string; // ISO date string
   isHerb?: boolean;
 }
 
 export interface Symptom {
   id: string;
   description: string;
-  onsetDate?: string;
   severity: 'mild' | 'moderate' | 'severe';
 }
 

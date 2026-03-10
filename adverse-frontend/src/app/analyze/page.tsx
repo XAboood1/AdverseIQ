@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { analyzeCase } from '@/services/api';
-import { AnalysisRequest, Medication, Symptom, PatientContext, AnalysisStrategy } from '@/types';
+import { analyzeCase, streamAnalyzeCase } from '@/services/api';
+import { AnalysisRequest, AnalysisResult, Medication, Symptom, PatientContext, AnalysisStrategy } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ActivitySquare, GitBranch, Network, AlertOctagon, CheckCircle, AlertTriangle, FileText, ArrowLeft, Plus, Star } from 'lucide-react';
 import ReasoningTree from '@/components/tree/ReasoningTree';
@@ -16,42 +16,104 @@ export default function AnalyzePage() {
     const [strategy, setStrategy] = useState<AnalysisStrategy>('hypothesis');
     const [recentlyAddedId, setRecentlyAddedId] = useState<string | undefined>();
 
-    const { mutate: runAnalysis, data: result, isPending } = useMutation({
+    // SSE streaming state (used for hypothesis / mystery-solver strategy)
+    const [streamResult, setStreamResult] = useState<AnalysisResult | undefined>();
+    const [streamPending, setStreamPending] = useState(false);
+    const [streamedLogs, setStreamedLogs] = useState<string[]>([]);
+    const streamAbortRef = useRef<(() => void) | null>(null);
+
+
+    // Non-streaming mutation (used for rapid / mechanism strategies)
+    const { mutate: runMutation, data: mutationResult, isPending: mutationPending } = useMutation({
         mutationFn: (req: AnalysisRequest) => analyzeCase(req),
     });
 
+    // Unified result / pending across both paths
+    const result = streamResult ?? mutationResult;
+    const isPending = streamPending || mutationPending;
+
+    // Cleanup on unmount
+    useEffect(() => () => { if (streamAbortRef.current) streamAbortRef.current(); }, []);
+
     const handleDemoClick = (id: 'demo_1' | 'demo_2' | 'demo_3') => {
+        // Reset all state for a clean slate
+        if (streamAbortRef.current) { streamAbortRef.current(); streamAbortRef.current = null; }
+        setStreamResult(undefined);
+        setStreamPending(false);
+        setStreamedLogs([]);
+        setRecentlyAddedId(undefined);
+        setPatientContext({});
+
         if (id === 'demo_1') {
+            // 72-year-old female on chronic warfarin; fluconazole newly prescribed for oral thrush
             setMedications([
-                { id: '1', displayName: 'Warfarin', genericName: 'warfarin' },
-                { id: '2', displayName: 'Fluconazole', genericName: 'fluconazole' }
+                { id: 'demo1-med1', displayName: 'Warfarin', genericName: 'warfarin', dose: '5mg', frequency: 'once daily' },
+                { id: 'demo1-med2', displayName: 'Fluconazole', genericName: 'fluconazole', dose: '150mg', frequency: 'once daily' },
             ]);
-            setSymptoms([{ id: 's1', description: 'Unexplained bruising', severity: 'moderate' }]);
+            setSymptoms([{ id: 's1', description: 'Unexplained bruising and prolonged bleeding', severity: 'moderate' }]);
+            setPatientContext({ age: 72, sex: 'F', renalImpairment: false, hepaticImpairment: false, pregnant: false });
+            setRecentlyAddedId('demo1-med2');
             setStrategy('rapid');
         } else if (id === 'demo_2') {
+            // 58-year-old male, type 2 diabetic, self-started St. John's Wort for low mood
             setMedications([
-                { id: '1', displayName: 'Metformin', genericName: 'metformin' },
-                { id: '2', displayName: "St. John's Wort", genericName: 'st johns wort', isHerb: true }
+                { id: 'demo2-med1', displayName: 'Metformin', genericName: 'metformin', dose: '1000mg', frequency: 'twice daily' },
+                { id: 'demo2-med2', displayName: "St. John's Wort", genericName: "st. john's wort", dose: '300mg', frequency: 'three times daily', isHerb: true },
             ]);
-            setSymptoms([{ id: 's1', description: 'Spiking Hyperglycemia', severity: 'severe' }]);
+            setSymptoms([{ id: 's1', description: 'Spiking hyperglycemia despite diet compliance', severity: 'severe' }]);
+            setPatientContext({ age: 58, sex: 'M', renalImpairment: false, hepaticImpairment: false, pregnant: false });
+            setRecentlyAddedId('demo2-med2');
             setStrategy('mechanism');
         } else if (id === 'demo_3') {
+            // 45-year-old female on sertraline; tramadol added post-surgery
             setMedications([
-                { id: '1', displayName: 'Tramadol', genericName: 'tramadol' },
-                { id: '2', displayName: 'Sertraline', genericName: 'sertraline' }
+                { id: 'demo3-med1', displayName: 'Tramadol', genericName: 'tramadol', dose: '50mg', frequency: 'as needed' },
+                { id: 'demo3-med2', displayName: 'Sertraline', genericName: 'sertraline', dose: '100mg', frequency: 'once daily' },
             ]);
             setSymptoms([
-                { id: 's1', description: 'Fever', severity: 'severe' },
-                { id: 's2', description: 'Confusion', severity: 'severe' },
-                { id: 's3', description: 'Muscle rigidity', severity: 'severe' }
+                { id: 's1', description: 'High fever (39.8°C)', severity: 'severe' },
+                { id: 's2', description: 'Agitation and confusion', severity: 'severe' },
+                { id: 's3', description: 'Muscle rigidity and clonus', severity: 'severe' },
             ]);
+            setPatientContext({ age: 45, sex: 'F', renalImpairment: false, hepaticImpairment: false, pregnant: false });
+            setRecentlyAddedId('demo3-med1');
             setStrategy('hypothesis');
         }
     };
 
     const handleAnalyze = () => {
         if (medications.length < 2 || symptoms.length < 1) return;
-        runAnalysis({ medications, symptoms, patientContext, strategy, recentlyAdded: recentlyAddedId });
+
+        // Resolve the medication ID to its display name for the backend
+        const recentlyAddedName = medications.find(m => m.id === recentlyAddedId)?.displayName;
+        const req: AnalysisRequest = { medications, symptoms, patientContext, strategy, recentlyAdded: recentlyAddedName };
+
+        if (strategy === 'hypothesis') {
+            // Use SSE streaming path for Mystery Solver
+            if (streamAbortRef.current) { streamAbortRef.current(); streamAbortRef.current = null; }
+            setStreamResult(undefined);
+            setStreamedLogs([]);
+            setStreamPending(true);
+
+            const { abort } = streamAnalyzeCase(req, (eventType, data) => {
+                if (eventType === 'thinking') {
+                    setStreamedLogs(prev => [...prev, data]);
+                } else if (eventType === 'tool_summary') {
+                    setStreamedLogs(prev => [...prev, `\n[Tool: ${data}]\n`]);
+                } else if (eventType === 'stage') {
+                    // stage events are internal progress markers — don't pollute the thinking stream
+                } else if (eventType === 'result') {
+                    try { setStreamResult(JSON.parse(data)); } catch { /* ignore parse error */ }
+                    setStreamPending(false);
+                } else if (eventType === 'error') {
+                    setStreamPending(false);
+                }
+            });
+            streamAbortRef.current = abort;
+        } else {
+            // Rapid / Mechanism — standard POST
+            runMutation(req);
+        }
     };
 
     const handleExportPDF = async () => {
@@ -97,10 +159,12 @@ export default function AnalyzePage() {
                         <ArrowLeft className="mr-2 h-4 w-4" />
                         New Analysis
                     </Button>
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleExportPDF} className="border-white/10 text-white/80 bg-white/5 hover:bg-white/10 hover:text-white transition-all">
-                            <FileText className="mr-2 h-4 w-4" /> Export PDF
-                        </Button>
+                    <div className="flex items-center gap-3">
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={handleExportPDF} className="border-white/10 text-white/80 bg-white/5 hover:bg-white/10 hover:text-white transition-all">
+                                <FileText className="mr-2 h-4 w-4" /> Export PDF
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
@@ -129,7 +193,7 @@ export default function AnalyzePage() {
                                 ? result.hypotheses?.[0]?.description || 'No hypothesis generated'
                                 : (result.db_interaction ? `${result.db_interaction.drug_a} + ${result.db_interaction.drug_b}` : 'Causal Pathway Identified')}
                         </h3>
-                        <p className="text-white/60 italic mb-6 leading-relaxed flex-1 bg-white/[0.03] p-4 rounded-lg border border-white/5">
+                        <p className="text-white/60 italic mb-6 leading-relaxed bg-white/[0.03] p-4 rounded-lg border border-white/5">
                             {result.strategy === 'hypothesis'
                                 ? result.hypotheses?.[0]?.mechanism || result.mechanism
                                 : (result.mechanism || result.causal_steps?.[0]?.mechanism || result.db_interaction?.mechanism || 'Pharmacological pathway mapped successfully.')}
@@ -220,7 +284,10 @@ export default function AnalyzePage() {
                 {/* Reasoning Trace output for Strategy */}
                 {(result.strategy === 'hypothesis') && (
                     <div className="mt-8">
-                        <ThinkingStream isComplete={true} medications={medications} symptoms={symptoms} result={result} />
+                        <ThinkingStream
+                            isComplete={true}
+                            rawLogs={streamedLogs.length > 0 ? streamedLogs : undefined}
+                        />
                     </div>
                 )}
 
@@ -348,12 +415,22 @@ export default function AnalyzePage() {
                                         placeholder="e.g. Warfarin"
                                     />
                                 </div>
-                                <div className="flex gap-4">
+                                <div className="flex gap-3">
                                     <div className="flex-1">
                                         <label className="text-xs font-bold uppercase tracking-widest text-white/50 block mb-1.5 ml-1">Dose (Optional)</label>
-                                        <input type="text" className="w-full p-2.5 border border-white/10 rounded-lg bg-white/[0.05] text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/50 transition-all placeholder:text-white/30" placeholder="e.g. 5mg" />
+                                        <input
+                                            type="text"
+                                            value={med.dose || ''}
+                                            onChange={(e) => {
+                                                const newMeds = [...medications];
+                                                newMeds[index].dose = e.target.value;
+                                                setMedications(newMeds);
+                                            }}
+                                            className="w-full p-2.5 border border-white/10 rounded-lg bg-white/[0.05] text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30 focus:border-cyan-400/50 transition-all placeholder:text-white/30"
+                                            placeholder="e.g. 5mg"
+                                        />
                                     </div>
-                                    <div className="flex items-center pt-6 px-2">
+                                    <div className="flex items-center pt-6 px-1">
                                         <button
                                             className={`px-3 py-2 flex items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-all border ${recentlyAddedId === med.id
                                                 ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 hover:bg-amber-500/30'
@@ -511,7 +588,7 @@ export default function AnalyzePage() {
                                 <ActivitySquare className="h-6 w-6 text-cyan-400" />
                             </div>
                             <h4 className="font-heading font-bold text-white mb-1 text-base">Rapid Check</h4>
-                            <p className="text-xs text-white/40 mb-3 font-mono">~5s execution</p>
+                            <p className="text-xs text-white/40 mb-3 font-mono">~10-20s execution</p>
                             <p className="text-sm text-white/60 mb-4 leading-relaxed font-medium">Known interaction lookup confirming established mechanisms.</p>
                             <span className="text-[10px] font-bold uppercase tracking-wider bg-white/5 text-white/50 px-2.5 py-1.5 rounded-md border border-white/10">Best for known pairs</span>
                         </div>
@@ -526,7 +603,7 @@ export default function AnalyzePage() {
                                 <GitBranch className="h-6 w-6 text-cyan-400" />
                             </div>
                             <h4 className="font-heading font-bold text-white mb-1 text-base">Mechanism Trace</h4>
-                            <p className="text-xs text-white/40 mb-3 font-mono">~15s execution</p>
+                            <p className="text-xs text-white/40 mb-3 font-mono">~20-40s execution</p>
                             <p className="text-sm text-white/60 mb-4 leading-relaxed font-medium">Step-by-step causal chain charting pharmacokinetics.</p>
                             <span className="text-[10px] font-bold uppercase tracking-wider bg-white/5 text-white/50 px-2.5 py-1.5 rounded-md border border-white/10">Best for pathways</span>
                         </div>
@@ -542,7 +619,7 @@ export default function AnalyzePage() {
                                 <Network className="h-6 w-6 text-cyan-400" />
                             </div>
                             <h4 className="font-heading font-bold text-white mb-1 text-base">Mystery Solver</h4>
-                            <p className="text-xs text-white/40 mb-3 font-mono">~30s execution</p>
+                            <p className="text-xs text-white/40 mb-3 font-mono">~30-60s execution</p>
                             <p className="text-sm text-white/60 mb-4 leading-relaxed font-medium">Multi-hypothesis reasoning with dynamic PubMed literature search.</p>
                             <span className="text-[10px] font-bold uppercase tracking-wider bg-white/5 text-white/50 px-2.5 py-1.5 rounded-md border border-white/10">Best for complex cases</span>
                         </div>
@@ -555,7 +632,13 @@ export default function AnalyzePage() {
             <div className="pt-6 border-t border-white/10">
                 {isPending && strategy === 'hypothesis' ? (
                     <div className="bg-[#0B1120]/80 rounded-xl p-6 border border-cyan-400/20 ring-1 ring-cyan-400/10 shadow-[0_0_30px_-6px_rgba(0,210,255,0.2)]">
-                        <ThinkingStream isComplete={!!result} medications={medications} symptoms={symptoms} result={result} />
+                        <div className="flex items-center justify-between mb-4">
+                            <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">K2 Investigating</span>
+                        </div>
+                        <ThinkingStream
+                            isComplete={!!result}
+                            rawLogs={streamedLogs.length > 0 ? streamedLogs : undefined}
+                        />
                     </div>
                 ) : (
                     <>
