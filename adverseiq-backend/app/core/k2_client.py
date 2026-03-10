@@ -666,27 +666,25 @@ class K2AgenticClient:
         timeout: float = 60.0,
     ) -> AsyncIterator[dict]:
         """
-        Run the agent loop and yield SSE-compatible event dicts.
+        Run the agent loop and yield SSE-compatible event dicts in real-time.
 
         Event types:
-            {"event": "thinking",     "data": str}   — K2 reasoning tokens
-            {"event": "tool_call",    "data": str}   — tool K2 is calling
-            {"event": "tool_result",  "data": str}   — result returned to K2
+            {"event": "thinking",     "data": str}   — K2 reasoning tokens (live)
+            {"event": "tool_summary", "data": str}   — tools K2 called
             {"event": "result",       "data": dict}  — final parsed AnalysisResult
             {"event": "error",        "data": str}   — error message
         """
-        # Bridge sync thinking_callback to async generator via queue
         thinking_q: asyncio.Queue = asyncio.Queue()
 
         def thinking_cb(token: str):
             try:
                 thinking_q.put_nowait(token)
             except asyncio.QueueFull:
-                pass  # drop token rather than block
+                pass  # drop rather than block
 
-        try:
-            # Run the full agent loop — it calls thinking_cb synchronously
-            result, logprobs, tools_used = await self.run_agent_loop(
+        # Launch the agent loop concurrently so we can stream tokens while it runs
+        loop_task: asyncio.Task = asyncio.create_task(
+            self.run_agent_loop(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 tool_executor=tool_executor,
@@ -694,27 +692,40 @@ class K2AgenticClient:
                 demo_fallback=demo_fallback,
                 timeout=timeout,
             )
+        )
 
-            # Drain any accumulated thinking tokens
+        try:
+            # Drain thinking tokens in real-time while the loop is running
+            while not loop_task.done():
+                try:
+                    token = await asyncio.wait_for(thinking_q.get(), timeout=0.05)
+                    yield {"event": "thinking", "data": token}
+                except asyncio.TimeoutError:
+                    await asyncio.sleep(0)  # yield control back to event loop
+
+            # Drain any tokens that arrived in the final batch
             while not thinking_q.empty():
                 token = thinking_q.get_nowait()
                 yield {"event": "thinking", "data": token}
 
-            # Report tools K2 used — shown in Investigation tab in UI
-            if tools_used:
-                yield {
-                    "event": "tool_summary",
-                    "data": (
-                        f"K2 autonomously called {len(tools_used)} tools: "
-                        f"{', '.join(dict.fromkeys(tools_used))}"
-                    ),
-                }
-
-            yield {"event": "result", "data": result}
+            # Retrieve result — task is already done, this returns immediately
+            result, _logprobs, tools_used = await loop_task
 
         except Exception as exc:
             logger.error(f"stream_agent_loop failed: {exc}", exc_info=True)
             yield {"event": "error", "data": str(exc)}
+            return
+
+        if tools_used:
+            yield {
+                "event": "tool_summary",
+                "data": (
+                    f"K2 autonomously called {len(tools_used)} tools: "
+                    f"{', '.join(dict.fromkeys(tools_used))}"
+                ),
+            }
+
+        yield {"event": "result", "data": result}
 
     async def check_reachable(self) -> bool:
         try:

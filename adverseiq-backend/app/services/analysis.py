@@ -116,7 +116,9 @@ def _static_alt(drug_a: str, drug_b: str) -> Optional[str]:
     )
 
 
-def _resolve_urgency(k2_urgency: Optional[str], generic_names: list, symptom_texts: list) -> tuple[str, str]:
+def _resolve_urgency(
+    k2_urgency: Optional[str], generic_names: list, symptom_texts: list
+) -> tuple[str, str]:
     """
     Resolve final urgency using K2 as primary source.
 
