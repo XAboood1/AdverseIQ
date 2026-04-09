@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     frontend_url: str = "*"
 
     # Rate limiting — build-api rate limit unknown; conservative threshold
-    k2_rate_limit: int = 15
+    k2_rate_limit: int = 20
     k2_rate_window: int = 60  # seconds
 
 
