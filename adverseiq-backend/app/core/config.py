@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     k2_rate_limit: int = 20
     k2_rate_window: int = 60  # seconds
 
+    # Model consistency controls
+    k2_temperature: float = 0.0
+
 
 @lru_cache()
 def get_settings() -> Settings:

@@ -360,6 +360,7 @@ class K2StandardClient:
                     {"role": "user", "content": user_prompt},
                 ],
                 max_tokens=max_tokens,
+                temperature=settings.k2_temperature,
                 timeout=timeout,
             )
             content = response.choices[0].message.content or ""
@@ -380,6 +381,7 @@ class K2StandardClient:
                     ),
                 }],
                 max_tokens=2048,
+                temperature=settings.k2_temperature,
                 timeout=30.0,
             )
             fixed = self.repair_json(fix.choices[0].message.content or "")
@@ -417,6 +419,7 @@ class K2StandardClient:
                 {"role": "user", "content": user_prompt},
             ],
             max_tokens=max_tokens,
+            temperature=settings.k2_temperature,
             stream=True,
             timeout=timeout,
         )
@@ -443,6 +446,7 @@ class K2StandardClient:
                 model=settings.k2_model,
                 messages=[{"role": "user", "content": "Reply OK only."}],
                 max_tokens=50,
+                temperature=settings.k2_temperature,
                 timeout=15.0,
             )
             return bool(r.choices[0].message.content)
@@ -524,7 +528,7 @@ class K2AgenticClient:
             timeout:            per-turn HTTP timeout in seconds
 
         Returns:
-            (result_dict, logprobs_content, tool_calls_made)
+                "temperature": settings.k2_temperature,
             - result_dict:      parsed JSON from K2's final answer
             - logprobs_content: token logprob list from final turn (may be None)
             - tool_calls_made:  list of tool names K2 called, in order
@@ -545,6 +549,7 @@ class K2AgenticClient:
                 "model": settings.k2_build_model,
                 "messages": messages,
                 "max_tokens": 4096,
+                "temperature": settings.k2_temperature,
                 "timeout": timeout,
             }
 
@@ -608,7 +613,7 @@ class K2AgenticClient:
 
                     logger.info(f"K2 → tool: {name}({json.dumps(args)})")
                     if thinking_callback:
-                        thinking_callback(f"\n[Tool: {name}({json.dumps(args)})]\n")
+                        thinking_callback(f"[Tool: {name}({json.dumps(args)})] ")
 
                     try:
                         tool_result = await tool_executor(name, args)
@@ -724,6 +729,10 @@ class K2AgenticClient:
                     f"{', '.join(dict.fromkeys(tools_used))}"
                 ),
             }
+        if isinstance(result, dict):
+            if not result.get("tools_used"):
+                result["tools_used"] = list(dict.fromkeys(tools_used))
+            result["tools_used_actual"] = list(dict.fromkeys(tools_used))
 
         yield {"event": "result", "data": result}
 
@@ -734,6 +743,7 @@ class K2AgenticClient:
                 model=settings.k2_build_model,
                 messages=[{"role": "user", "content": "Reply OK only."}],
                 max_tokens=50,
+                temperature=settings.k2_temperature,
                 timeout=15.0,
             )
             return bool(r.choices[0].message.content)

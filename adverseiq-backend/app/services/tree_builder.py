@@ -20,6 +20,15 @@ def _confidence_color(confidence: float, status: str) -> str:
     return "#6B7280"  # gray-500
 
 
+def _parse_confidence(value: Any) -> float:
+    try:
+        if isinstance(value, str):
+            return float(value.strip().replace("%", ""))
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 class TreeBuilder:
     def build(self, hypotheses: list[dict[str, Any]]) -> dict[str, Any]:
         """
@@ -44,16 +53,23 @@ class TreeBuilder:
         )
 
         # Layout: spread hypotheses horizontally
-        # Pruning: skip confidence < 15
-        visible = [h for h in hypotheses if h.get("confidence", 0) >= 15]
-        pruned = [h for h in hypotheses if h.get("confidence", 0) < 15]
+        # Pruning: keep low-confidence nodes only if everything is low
+        min_confidence = 10.0
+        visible = [h for h in hypotheses if _parse_confidence(h.get("confidence", 0)) >= min_confidence]
+        if not visible:
+            visible = sorted(
+                hypotheses,
+                key=lambda h: _parse_confidence(h.get("confidence", 0)),
+                reverse=True,
+            )[:3]
+        pruned = [h for h in hypotheses if h not in visible]
 
         total_width = len(visible) * 280
         start_x = -(total_width / 2) + 140  # center around root
 
         for i, hyp in enumerate(visible):
             hyp_id = hyp.get("id", f"H{i+1}")
-            confidence = float(hyp.get("confidence", 0))
+            confidence = _parse_confidence(hyp.get("confidence", 0))
             status = hyp.get("status", "possible")
 
             color = _confidence_color(confidence, status)

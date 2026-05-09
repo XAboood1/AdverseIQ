@@ -24,7 +24,7 @@ async def analyze_profile_stream(profile: PatientProfile):
         try:
             async for event in orchestrator_agent.run_streaming(profile):
                 event_type = event.get("type", "agent_progress")
-                yield f"event: {event_type}\ndata: {json.dumps(event)}\n\n"
+                yield f"event: {event_type}\ndata: {json.dumps(event, default=str)}\n\n"
         except Exception as exc:
             logger.error(f"profile stream failed: {exc}", exc_info=True)
             payload = {
@@ -32,7 +32,7 @@ async def analyze_profile_stream(profile: PatientProfile):
                 "agent": "orchestrator",
                 "message": str(exc),
             }
-            yield f"event: error\ndata: {json.dumps(payload)}\n\n"
+            yield f"event: error\ndata: {json.dumps(payload, default=str)}\n\n"
 
     return StreamingResponse(
         event_stream(),

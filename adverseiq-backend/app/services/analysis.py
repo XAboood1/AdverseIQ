@@ -753,7 +753,11 @@ class AnalysisService:
 
                     hypotheses = k2_result.get("hypotheses", [])
                     tree = tree_builder.build(hypotheses)
-                    tools_used = k2_result.get("tools_used", [])
+                    tools_used = (
+                        k2_result.get("tools_used_actual")
+                        or k2_result.get("tools_used")
+                        or []
+                    )
 
                     top_id = k2_result.get("top_hypothesis", "H1")
                     top_hyp = next((h for h in hypotheses if h["id"] == top_id), None)

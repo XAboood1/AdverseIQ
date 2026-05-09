@@ -141,7 +141,7 @@ class OrchestratorAgent:
 
         yield {
             "type": "result",
-            "report": report.model_dump(by_alias=True),
+            "report": report.model_dump(by_alias=True, mode="json"),
         }
 
     async def _run_polypharmacy(self, profile: PatientProfile) -> dict:
