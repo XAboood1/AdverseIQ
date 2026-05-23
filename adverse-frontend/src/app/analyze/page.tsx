@@ -19,7 +19,6 @@ export default function AnalyzePage() {
     // SSE streaming state (used for hypothesis / mystery-solver strategy)
     const [streamResult, setStreamResult] = useState<AnalysisResult | undefined>();
     const [streamPending, setStreamPending] = useState(false);
-    const [streamedLogs, setStreamedLogs] = useState<string[]>([]);
     const streamAbortRef = useRef<(() => void) | null>(null);
     const [agentLogs, setAgentLogs] = useState<string[]>([]);
     const [agentPending, setAgentPending] = useState(false);
@@ -86,7 +85,6 @@ export default function AnalyzePage() {
         if (streamAbortRef.current) { streamAbortRef.current(); streamAbortRef.current = null; }
         setStreamResult(undefined);
         setStreamPending(false);
-        setStreamedLogs([]);
         setRecentlyAddedId(undefined);
         setPatientContext({});
 
@@ -139,8 +137,6 @@ export default function AnalyzePage() {
         const req: AnalysisRequest = { medications, symptoms, patientContext, strategy, recentlyAdded: recentlyAddedName };
 
         setStreamResult(undefined);
-        setStreamedLogs([]);
-
         if (strategy === 'hypothesis') {
             if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
             setAgentLogs([]);
