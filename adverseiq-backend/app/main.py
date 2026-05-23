@@ -36,14 +36,19 @@ app = FastAPI(
 # Build the allowed-origins list.
 # IMPORTANT: Starlette raises a ValueError (and drops CORS headers entirely) when
 # allow_origins contains "*" AND allow_credentials=True — these are incompatible
-# in the CORS spec.  When frontend_url is "*" (the default / open-dev setting),
+# in the CORS spec. When frontend_url is "*" (the default / open-dev setting),
 # we use allow_origin_regex=".*" instead, which achieves the same permissive
-# behaviour without the conflict.
-_explicit_origins = [
-    o for o in [settings.frontend_url, "http://localhost:3000"]
-    if o and o != "*"
-]
-_allow_all = settings.frontend_url == "*"
+# behavior without the conflict.
+_frontend_env = settings.frontend_url or ""
+_frontend_parts = [p.strip() for p in _frontend_env.split(",") if p.strip()]
+_allow_all = "*" in _frontend_parts
+
+_explicit_origins = [p for p in _frontend_parts if p != "*"]
+if settings.environment.lower() == "development":
+    # Always allow local dev origins to avoid CORS mismatches.
+    _explicit_origins.extend(["http://localhost:3000", "http://127.0.0.1:3000"])
+
+_explicit_origins = sorted(set(_explicit_origins))
 
 app.add_middleware(
     CORSMiddleware,

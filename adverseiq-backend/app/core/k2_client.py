@@ -37,7 +37,7 @@ import asyncio
 import logging
 from typing import AsyncIterator, Optional, Callable, Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, NotFoundError, APIStatusError
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -80,8 +80,17 @@ def _extract_logprob_certainty(logprobs_content: list, target_token: str) -> Opt
     if not logprobs_content:
         return None
     for token_data in logprobs_content:
-        if token_data.get("token", "").strip() == target_token:
-            lp = token_data.get("logprob", -20.0)
+        token = getattr(token_data, "token", None)
+        if token is None and isinstance(token_data, dict):
+            token = token_data.get("token", "")
+        token = (token or "").strip()
+
+        if token == target_token:
+            lp = getattr(token_data, "logprob", None)
+            if lp is None and isinstance(token_data, dict):
+                lp = token_data.get("logprob", -20.0)
+            if lp is None:
+                lp = -20.0
             return math.exp(max(lp, -20.0))  # clamp to avoid underflow
     return None
 
@@ -486,12 +495,75 @@ class K2AgenticClient:
     MAX_TURNS = 5  # 4–5 is typical; 5 is a good balance of depth vs speed
 
     def __init__(self):
+        self._base_urls = self._normalize_base_urls(settings.k2_build_url)
         self.client = AsyncOpenAI(
             api_key=settings.k2_api_key,
-            base_url=settings.k2_build_url,
+            base_url=self._base_urls[0],
         )
+        logger.info("Agentic K2 base URLs: %s", self._base_urls)
+        logger.info("Agentic K2 model: %s", settings.k2_build_model)
         self._timestamps: list[float] = []
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _normalize_base_urls(raw_url: str) -> list[str]:
+        cleaned = (raw_url or "").strip().rstrip("/")
+        if not cleaned:
+            return ["https://build-api.k2think.ai/v1"]
+
+        candidates = [cleaned]
+        if cleaned.endswith("/v1"):
+            candidates.append(cleaned[:-3])
+        else:
+            candidates.append(f"{cleaned}/v1")
+
+        # Preserve order, dedupe
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for url in candidates:
+            if url and url not in seen:
+                normalized.append(url)
+                seen.add(url)
+
+        return normalized
+
+    async def _call_chat_with_fallbacks(self, kwargs: dict):
+        last_exc: Optional[Exception] = None
+        for idx, base_url in enumerate(self._base_urls):
+            client = self.client if idx == 0 else AsyncOpenAI(
+                api_key=settings.k2_api_key,
+                base_url=base_url,
+            )
+            try:
+                return await client.chat.completions.create(**kwargs)
+            except APIStatusError as exc:
+                last_exc = exc
+                logger.error(
+                    "Agentic APIStatusError at %s status=%s model=%s body=%s",
+                    base_url,
+                    getattr(exc, "status_code", "unknown"),
+                    kwargs.get("model", settings.k2_build_model),
+                    getattr(exc, "body", None),
+                )
+                # Retry other candidate base URLs for 404s and other endpoint mismatch cases.
+                continue
+            except NotFoundError as exc:
+                last_exc = exc
+                logger.warning(
+                    "Agentic endpoint 404 at %s — trying alternate base URL",
+                    base_url,
+                )
+                continue
+        if last_exc:
+            # Raise a clearer runtime error to aid debugging in dev.
+            msg = (
+                f"Agentic client: all base URLs returned 404. Tried: {self._base_urls}. "
+                f"Model: {kwargs.get('model', settings.k2_build_model)}. "
+                "Check K2_BUILD_URL, K2_BUILD_MODEL, and K2_API_KEY."
+            )
+            logger.error(msg)
+            raise RuntimeError(msg) from last_exc
+        raise RuntimeError("Agentic client: no base URLs available")
 
     async def _throttle(self):
         async with self._lock:
@@ -563,9 +635,18 @@ class K2AgenticClient:
                 kwargs["tools"] = ADVERSEIQ_TOOLS
 
             try:
-                response = await self.client.chat.completions.create(**kwargs)
+                response = await self._call_chat_with_fallbacks(kwargs)
             except Exception as exc:
-                logger.error(f"Agentic turn {turn} API call failed: {exc}", exc_info=True)
+                logger.error(
+                    "Agentic turn failed turn=%s is_final=%s model=%s tools=%s timeout=%s err=%s",
+                    turn,
+                    is_final,
+                    kwargs.get("model", settings.k2_build_model),
+                    "enabled" if "tools" in kwargs else "disabled",
+                    kwargs.get("timeout", timeout),
+                    exc,
+                    exc_info=True,
+                )
                 if demo_fallback:
                     return demo_fallback, None, tool_calls_made
                 raise
@@ -675,11 +756,15 @@ class K2AgenticClient:
 
         Event types:
             {"event": "thinking",     "data": str}   — K2 reasoning tokens (live)
+            {"event": "stage",        "data": str}   — keepalive progress updates
             {"event": "tool_summary", "data": str}   — tools K2 called
             {"event": "result",       "data": dict}  — final parsed AnalysisResult
             {"event": "error",        "data": str}   — error message
         """
         thinking_q: asyncio.Queue = asyncio.Queue()
+        last_emit = time.monotonic()
+        last_keepalive = last_emit
+        keepalive_interval = 2.0
 
         def thinking_cb(token: str):
             try:
@@ -705,7 +790,13 @@ class K2AgenticClient:
                 try:
                     token = await asyncio.wait_for(thinking_q.get(), timeout=0.05)
                     yield {"event": "thinking", "data": token}
+                    last_emit = time.monotonic()
+                    last_keepalive = last_emit
                 except asyncio.TimeoutError:
+                    now = time.monotonic()
+                    if now - last_emit >= keepalive_interval and now - last_keepalive >= keepalive_interval:
+                        yield {"event": "stage", "data": "K2 running tool calls..."}
+                        last_keepalive = now
                     await asyncio.sleep(0)  # yield control back to event loop
 
             # Drain any tokens that arrived in the final batch

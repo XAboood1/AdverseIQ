@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     database_url: str = ""
     frontend_url: str = "*"
 
+    # Environment (development, staging, production)
+    environment: str = "development"
+
     # Rate limiting — build-api rate limit unknown; conservative threshold
     k2_rate_limit: int = 20
     k2_rate_window: int = 60  # seconds

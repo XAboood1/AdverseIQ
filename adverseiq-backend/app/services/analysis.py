@@ -29,6 +29,7 @@ import json
 import logging
 from pathlib import Path
 from typing import AsyncIterator, Optional, Any
+from fastapi import HTTPException
 
 from app.core.k2_client import (
     k2_client,
@@ -40,8 +41,10 @@ from app.services.pubmed_client import pubmed_client
 from app.services.urgency import urgency_assessor
 from app.services.tree_builder import tree_builder
 from app.services.confidence import confidence_engine
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 FALLBACKS_PATH = Path("app/data/demo_fallbacks.json")
 CYP_PATH = Path("app/data/cyp_profiles.json")
@@ -619,6 +622,15 @@ class AnalysisService:
         patient_context = request.get("patientContext")
         recently_added = request.get("recentlyAdded")
 
+        logger.info(
+            "Mystery solver request meds=%s symptoms=%s recently_added=%s build_url=%s build_model=%s",
+            len(meds),
+            len(symptoms),
+            recently_added,
+            settings.k2_build_url,
+            settings.k2_build_model,
+        )
+
         for m in meds:
             m["generic"] = await drug_lookup.normalize(m["displayName"])
         generic_names = [m["generic"] for m in meds]
@@ -634,13 +646,31 @@ class AnalysisService:
             if "metformin" in generic_names and "st. john's wort" in generic_names:
                 fallback = _load_fallback("stjohnswort")
 
-        k2_result, logprobs_content, tools_used = await k2_build_client.run_agent_loop(
-            system_prompt=system,
-            user_prompt=user,
-            tool_executor=execute_tool,
-            demo_fallback=fallback,
-            timeout=60.0,
-        )
+        try:
+            k2_result, logprobs_content, tools_used = await k2_build_client.run_agent_loop(
+                system_prompt=system,
+                user_prompt=user,
+                tool_executor=execute_tool,
+                demo_fallback=fallback,
+                timeout=60.0,
+            )
+        except Exception as exc:
+            logger.error(
+                "Mystery solver agentic run failed build_url=%s build_model=%s err=%s",
+                settings.k2_build_url,
+                settings.k2_build_model,
+                exc,
+                exc_info=True,
+            )
+            # Provide a clearer HTTP error to the frontend for debugging.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "K2 agentic endpoint failed (404 Not Found or misconfiguration). "
+                    "Check K2_BUILD_URL, K2_BUILD_MODEL, and K2_API_KEY in the backend .env. "
+                    f"Underlying error: {str(exc)}"
+                ),
+            )
 
         # ── Urgency: K2 primary, assessor only escalates ──────────────────────
         final_urgency, escalation_reason = _resolve_urgency(
@@ -736,7 +766,7 @@ class AnalysisService:
             ):
                 event_type = event["event"]
 
-                if event_type in ("thinking", "tool_summary"):
+                if event_type in ("thinking", "tool_summary", "stage"):
                     yield event
 
                 elif event_type == "result":
