@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { analyzeCase, streamAnalyzeCase } from '@/services/api';
+import { analyzeCase, streamProfileAnalyze } from '@/services/api';
 import { AnalysisRequest, AnalysisResult, Medication, Symptom, PatientContext, AnalysisStrategy } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ActivitySquare, GitBranch, Network, AlertOctagon, CheckCircle, AlertTriangle, FileText, ArrowLeft, Plus, Star } from 'lucide-react';
@@ -21,11 +21,23 @@ export default function AnalyzePage() {
     const [streamPending, setStreamPending] = useState(false);
     const [streamedLogs, setStreamedLogs] = useState<string[]>([]);
     const streamAbortRef = useRef<(() => void) | null>(null);
+    const [agentLogs, setAgentLogs] = useState<string[]>([]);
+    const [agentPending, setAgentPending] = useState(false);
+    const agentAbortRef = useRef<(() => void) | null>(null);
+    const agentResultRequestedRef = useRef(false);
 
 
     // Non-streaming mutation (used for rapid / mechanism strategies)
     const { mutate: runMutation, data: mutationResult, isPending: mutationPending } = useMutation({
         mutationFn: (req: AnalysisRequest) => analyzeCase(req),
+        onSuccess: (data) => {
+            setStreamResult(data);
+            setStreamPending(false);
+        },
+        onError: (error) => {
+            setStreamPending(false);
+            setAgentLogs(prev => [...prev, `[error] Final analysis failed: ${String(error)}`]);
+        },
     });
 
     // Unified result / pending across both paths
@@ -33,7 +45,41 @@ export default function AnalyzePage() {
     const isPending = streamPending || mutationPending;
 
     // Cleanup on unmount
-    useEffect(() => () => { if (streamAbortRef.current) streamAbortRef.current(); }, []);
+    useEffect(() => () => {
+        if (streamAbortRef.current) streamAbortRef.current();
+        if (agentAbortRef.current) agentAbortRef.current();
+    }, []);
+
+    const buildAgentProfile = () => {
+        const notes: string[] = [];
+        if (symptoms.length > 0) {
+            const symptomText = symptoms
+                .map(s => `${s.description} (${s.severity})`)
+                .join('; ');
+            notes.push(`Symptoms: ${symptomText}`);
+        }
+        const contextFlags: string[] = [];
+        if (patientContext.renalImpairment) contextFlags.push('renal impairment');
+        if (patientContext.hepaticImpairment) contextFlags.push('hepatic impairment');
+        if (patientContext.pregnant) contextFlags.push('pregnant');
+        if (contextFlags.length > 0) notes.push(`Context: ${contextFlags.join(', ')}`);
+
+        return {
+            patientId: `ui-${Date.now()}`,
+            age: patientContext.age,
+            sex: patientContext.sex,
+            diagnoses: [],
+            allergies: [],
+            medications: medications.map(m => ({
+                name: m.displayName,
+                dose: m.dose,
+                frequency: m.frequency,
+                recentlyAdded: m.id === recentlyAddedId,
+            })),
+            recentLabs: [],
+            notes: notes.length > 0 ? notes.join(' | ') : undefined,
+        };
+    };
 
     const handleDemoClick = (id: 'demo_1' | 'demo_2' | 'demo_3') => {
         // Reset all state for a clean slate
@@ -79,6 +125,10 @@ export default function AnalyzePage() {
             setRecentlyAddedId('demo3-med1');
             setStrategy('hypothesis');
         }
+
+        if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
+        setAgentPending(false);
+        setAgentLogs([]);
     };
 
     const handleAnalyze = () => {
@@ -88,30 +138,65 @@ export default function AnalyzePage() {
         const recentlyAddedName = medications.find(m => m.id === recentlyAddedId)?.displayName;
         const req: AnalysisRequest = { medications, symptoms, patientContext, strategy, recentlyAdded: recentlyAddedName };
 
-        if (strategy === 'hypothesis') {
-            // Use SSE streaming path for Mystery Solver
-            if (streamAbortRef.current) { streamAbortRef.current(); streamAbortRef.current = null; }
-            setStreamResult(undefined);
-            setStreamedLogs([]);
-            setStreamPending(true);
+        setStreamResult(undefined);
+        setStreamedLogs([]);
 
-            const { abort } = streamAnalyzeCase(req, (eventType, data) => {
-                if (eventType === 'thinking') {
-                    setStreamedLogs(prev => [...prev, data]);
-                } else if (eventType === 'tool_summary') {
-                    setStreamedLogs(prev => [...prev, `\n[Tool: ${data}]\n`]);
-                } else if (eventType === 'stage') {
-                    // stage events are internal progress markers — don't pollute the thinking stream
-                } else if (eventType === 'result') {
-                    try { setStreamResult(JSON.parse(data)); } catch { /* ignore parse error */ }
+        if (strategy === 'hypothesis') {
+            if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
+            setAgentLogs([]);
+            setAgentPending(true);
+            setStreamPending(true);
+            agentResultRequestedRef.current = false;
+            const agentProfile = buildAgentProfile();
+            const { abort: abortAgents } = streamProfileAnalyze(agentProfile, (eventType, data) => {
+                if (eventType === 'eof') {
+                    setAgentPending(false);
                     setStreamPending(false);
-                } else if (eventType === 'error') {
-                    setStreamPending(false);
+                    setAgentLogs(prev => [...prev, '[stream] Agent stream ended']);
+                    return;
                 }
+                if (eventType === 'error') {
+                    setAgentLogs(prev => [...prev, `[error] ${data}`]);
+                    setAgentPending(false);
+                    setStreamPending(false);
+                    return;
+                }
+
+                let payload: { type?: string; agent?: string; message?: string; agents?: string[]; report?: { overallUrgency?: string } } | null = null;
+                try { payload = JSON.parse(data); } catch { payload = null; }
+
+                if (!payload) {
+                    setAgentLogs(prev => [...prev, `[stream:${eventType}] ${data}`]);
+                    return;
+                }
+
+                const type = payload.type ?? eventType;
+                const agent = payload.agent ?? 'agent';
+                let message = payload.message ?? '';
+                if (type === 'agent_dispatch' && payload.agents && payload.agents.length > 0) {
+                    message = `${message} (${payload.agents.join(', ')})`;
+                }
+                if (type === 'result') {
+                    const urgency = payload.report?.overallUrgency;
+                    message = urgency ? `Report ready — highest urgency: ${urgency}` : 'Report ready';
+                    setAgentPending(false);
+                    if (!agentResultRequestedRef.current) {
+                        agentResultRequestedRef.current = true;
+                        setAgentLogs(prev => [...prev, '[Stage] Building final report...']);
+                        setStreamPending(true);
+                        runMutation(req);
+                    }
+                }
+
+                setAgentLogs(prev => [...prev, `[${agent}:${type}] ${message}`]);
             });
-            streamAbortRef.current = abort;
+            agentAbortRef.current = abortAgents;
         } else {
             // Rapid / Mechanism — standard POST
+            if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
+            setAgentLogs([]);
+            setAgentPending(false);
+            setStreamPending(false);
             runMutation(req);
         }
     };
@@ -128,7 +213,7 @@ export default function AnalyzePage() {
                 },
                 result
             };
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://adverseiq.onrender.com'}/api/export/pdf`, {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'}/api/export/pdf`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(exportData)
@@ -281,12 +366,13 @@ export default function AnalyzePage() {
                     </div>
                 </div>
 
-                {/* Reasoning Trace output for Strategy */}
-                {(result.strategy === 'hypothesis') && (
+                {(result.strategy === 'hypothesis' && agentLogs.length > 0) && (
                     <div className="mt-8">
                         <ThinkingStream
                             isComplete={true}
-                            rawLogs={streamedLogs.length > 0 ? streamedLogs : undefined}
+                            rawLogs={agentLogs}
+                            title="Agents Live"
+                            idleText="Waiting for agent stream..."
                         />
                     </div>
                 )}
@@ -633,11 +719,13 @@ export default function AnalyzePage() {
                 {isPending && strategy === 'hypothesis' ? (
                     <div className="bg-[#0B1120]/80 rounded-xl p-6 border border-cyan-400/20 ring-1 ring-cyan-400/10 shadow-[0_0_30px_-6px_rgba(0,210,255,0.2)]">
                         <div className="flex items-center justify-between mb-4">
-                            <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">K2 Investigating</span>
+                            <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">Agents Live</span>
                         </div>
                         <ThinkingStream
-                            isComplete={!!result}
-                            rawLogs={streamedLogs.length > 0 ? streamedLogs : undefined}
+                            isComplete={!agentPending}
+                            rawLogs={agentLogs.length > 0 ? agentLogs : undefined}
+                            title="Agents Live"
+                            idleText="Waiting for agent stream..."
                         />
                     </div>
                 ) : (

@@ -6,9 +6,11 @@ interface ThinkingStreamProps {
     isComplete: boolean;
     /** Real token chunks streamed from K2 via SSE. Each element is one SSE payload string. */
     rawLogs?: string[];
+    title?: string;
+    idleText?: string;
 }
 
-export default function ThinkingStream({ isComplete, rawLogs }: ThinkingStreamProps) {
+export default function ThinkingStream({ isComplete, rawLogs, title, idleText }: ThinkingStreamProps) {
     const [displayed, setDisplayed] = useState('');
     const pendingCharsRef = useRef<string[]>([]);
     const dripRef = useRef<NodeJS.Timeout | null>(null);
@@ -74,7 +76,7 @@ export default function ThinkingStream({ isComplete, rawLogs }: ThinkingStreamPr
                 <div className="flex items-center gap-3">
                     <div className="h-3 w-3 rounded-full bg-cyan-400 animate-pulse"></div>
                     <h2 className="text-xl font-bold text-white tracking-widest uppercase">
-                        {isComplete ? 'Reasoning Trace' : 'K2 Thinking'}
+                        {title ?? (isComplete ? 'Reasoning Trace' : 'K2 Thinking')}
                     </h2>
                 </div>
             </div>
@@ -93,7 +95,7 @@ export default function ThinkingStream({ isComplete, rawLogs }: ThinkingStreamPr
                     ) : (
                         <p className="text-sm text-cyan-400/40 font-mono leading-relaxed">
                             <span className="inline-block w-2 h-3.5 bg-cyan-400/40 animate-pulse mr-2 translate-y-[2px]" />
-                            Waiting for K2 reasoning stream...
+                            {idleText ?? 'Waiting for K2 reasoning stream...'}
                         </p>
                     )}
                 </div>

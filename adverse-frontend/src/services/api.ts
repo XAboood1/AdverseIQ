@@ -2,7 +2,7 @@ import { AnalysisRequest, AnalysisResult, Medication } from '../types';
 import { demoCases } from './demoData';
 
 const getApiBaseUrl = () => {
-    return process.env.NEXT_PUBLIC_API_BASE_URL || 'https://adverseiq.onrender.com';
+    return process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000';
 };
 
 export const searchDrugs = async (query: string): Promise<Medication[]> => {
@@ -41,23 +41,21 @@ export const analyzeCase = async (request: AnalysisRequest): Promise<AnalysisRes
     }
 };
 
-/**
- * Stream a Mystery Solver analysis via SSE.
- * Calls `onEvent` for each SSE event received.
- * Returns an abort function to cancel mid-stream.
- */
-export function streamAnalyzeCase(
-    request: AnalysisRequest,
-    onEvent: (eventType: string, data: string) => void
-): { abort: () => void } {
+type StreamEventHandler = (eventType: string, data: string) => void;
+
+const streamSse = (
+    url: string,
+    payload: unknown,
+    onEvent: StreamEventHandler
+): { abort: () => void } => {
     const controller = new AbortController();
 
     (async () => {
         try {
-            const response = await fetch(`${getApiBaseUrl()}/api/analyze/stream`, {
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(request),
+                body: JSON.stringify(payload),
                 signal: controller.signal,
             });
 
@@ -79,13 +77,18 @@ export function streamAnalyzeCase(
 
                 for (const block of parts) {
                     let eventType = 'message';
-                    let dataLine = '';
-                    for (const line of block.split('\n')) {
+                    const dataLines: string[] = [];
+                    for (const rawLine of block.split('\n')) {
+                        const line = rawLine.replace(/\r$/, '');
                         if (line.startsWith('event: ')) eventType = line.slice(7).trim();
-                        else if (line.startsWith('data: ')) dataLine = line.slice(6).trim();
+                        else if (line.startsWith('data: ')) dataLines.push(line.slice(6));
                     }
-                    if (dataLine) onEvent(eventType, dataLine);
+                    if (dataLines.length > 0) onEvent(eventType, dataLines.join('\n').trim());
                 }
+            }
+
+            if (!controller.signal.aborted) {
+                onEvent('eof', '');
             }
         } catch (e: unknown) {
             if (e instanceof Error && e.name !== 'AbortError') {
@@ -95,6 +98,25 @@ export function streamAnalyzeCase(
     })();
 
     return { abort: () => controller.abort() };
+};
+
+/**
+ * Stream a Mystery Solver analysis via SSE.
+ * Calls `onEvent` for each SSE event received.
+ * Returns an abort function to cancel mid-stream.
+ */
+export function streamAnalyzeCase(
+    request: AnalysisRequest,
+    onEvent: StreamEventHandler
+): { abort: () => void } {
+    return streamSse(`${getApiBaseUrl()}/api/analyze/stream`, request, onEvent);
+}
+
+export function streamProfileAnalyze(
+    profile: Record<string, unknown>,
+    onEvent: StreamEventHandler
+): { abort: () => void } {
+    return streamSse(`${getApiBaseUrl()}/api/profile/analyze/stream`, profile, onEvent);
 }
 
 export const loadDemoCase = async (id: 'demo_1' | 'demo_2' | 'demo_3'): Promise<AnalysisResult> => {
