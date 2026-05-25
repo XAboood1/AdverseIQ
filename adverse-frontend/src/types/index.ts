@@ -19,6 +19,7 @@ export interface PatientContext {
   renalImpairment?: boolean;
   hepaticImpairment?: boolean;
   pregnant?: boolean;
+  recentLabs?: LabResult[];
 }
 
 export type AnalysisStrategy = 'rapid' | 'mechanism' | 'hypothesis';
@@ -102,4 +103,67 @@ export interface AnalysisResult {
 
   safe_alternative?: string;
   tools_used?: string[];
+  findings?: Finding[];
+  labEvidence?: LabFlag[];
+}
+
+export interface AgentEvent {
+  type: string;
+  agent?: string;
+  message?: string;
+  urgency?: 'routine' | 'urgent' | 'emergent';
+  drugs?: string[];
+  lab?: string;
+  guideline?: string;
+  confidence?: number;
+  data?: Record<string, unknown>;
+}
+
+export interface LabResult {
+  name: string;
+  value: number;
+  unit: string;
+  dateTaken: string;
+  referenceRange?: string;
+  baselineValue?: number;
+  baselineDate?: string;
+}
+
+export interface LabFlag {
+  labName: string;
+  labValue: number;
+  labUnit: string;
+  relatedDrugs: string[];
+  urgency: 'routine' | 'urgent' | 'emergent';
+  reasoning: string;
+  mechanism: string;
+  recommendation: string;
+  confidence: number;
+  guidelineReference?: string;
+  contextDependent?: boolean;
+}
+
+export interface Finding {
+  drugsInvolved: string[];
+  urgency: 'routine' | 'urgent' | 'emergent';
+  urgencyReason: string;
+  mechanism: string;
+  recommendation: string;
+  safeAlternative?: string;
+  confidence: number;
+  labEvidence: LabFlag[];
+  evidenceSources?: string[];
+  labCompounding?: string;
+}
+
+export interface PatientProfile {
+  patientId: string;
+  age?: number;
+  weightKg?: number;
+  sex?: string;
+  diagnoses: string[];
+  allergies: string[];
+  medications: Medication[];
+  recentLabs: LabResult[];
+  notes?: string;
 }

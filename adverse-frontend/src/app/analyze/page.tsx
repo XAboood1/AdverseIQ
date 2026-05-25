@@ -7,7 +7,8 @@ import { AnalysisRequest, AnalysisResult, Medication, Symptom, PatientContext, A
 import { Button } from '@/components/ui/button';
 import { ActivitySquare, GitBranch, Network, AlertOctagon, CheckCircle, AlertTriangle, FileText, ArrowLeft, Plus, Star } from 'lucide-react';
 import ReasoningTree from '@/components/tree/ReasoningTree';
-import ThinkingStream from '@/components/streaming/ThinkingStream';
+import { AgentFeed } from '@/components/shared/AgentFeed';
+import { AgentEvent } from '@/types';
 
 export default function AnalyzePage() {
     const [medications, setMedications] = useState<Medication[]>([]);
@@ -20,7 +21,7 @@ export default function AnalyzePage() {
     const [streamResult, setStreamResult] = useState<AnalysisResult | undefined>();
     const [streamPending, setStreamPending] = useState(false);
     const streamAbortRef = useRef<(() => void) | null>(null);
-    const [agentLogs, setAgentLogs] = useState<string[]>([]);
+    const [events, setEvents] = useState<AgentEvent[]>([]);
     const [agentPending, setAgentPending] = useState(false);
     const agentAbortRef = useRef<(() => void) | null>(null);
     const agentResultRequestedRef = useRef(false);
@@ -35,7 +36,7 @@ export default function AnalyzePage() {
         },
         onError: (error) => {
             setStreamPending(false);
-            setAgentLogs(prev => [...prev, `[error] Final analysis failed: ${String(error)}`]);
+            setEvents(prev => [...prev, { type: 'error', message: `Final analysis failed: ${String(error)}` } as AgentEvent]);
         },
     });
 
@@ -126,7 +127,7 @@ export default function AnalyzePage() {
 
         if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
         setAgentPending(false);
-        setAgentLogs([]);
+        setEvents([]);
     };
 
     const handleAnalyze = () => {
@@ -139,7 +140,7 @@ export default function AnalyzePage() {
         setStreamResult(undefined);
         if (strategy === 'hypothesis') {
             if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
-            setAgentLogs([]);
+            setEvents([]);
             setAgentPending(true);
             setStreamPending(true);
             agentResultRequestedRef.current = false;
@@ -148,49 +149,49 @@ export default function AnalyzePage() {
                 if (eventType === 'eof') {
                     setAgentPending(false);
                     setStreamPending(false);
-                    setAgentLogs(prev => [...prev, '[stream] Agent stream ended']);
+                    setEvents(prev => [...prev, { type: 'agent_complete', agent: 'Orchestrator', message: 'Analysis complete.' } as AgentEvent]);
                     return;
                 }
                 if (eventType === 'error') {
-                    setAgentLogs(prev => [...prev, `[error] ${data}`]);
+                    setEvents(prev => [...prev, { type: 'error', message: data || 'Stream error occurred.' } as AgentEvent]);
                     setAgentPending(false);
                     setStreamPending(false);
                     return;
                 }
 
-                let payload: { type?: string; agent?: string; message?: string; agents?: string[]; report?: { overallUrgency?: string } } | null = null;
+                let payload: AgentEvent | null = null;
                 try { payload = JSON.parse(data); } catch { payload = null; }
 
                 if (!payload) {
-                    setAgentLogs(prev => [...prev, `[stream:${eventType}] ${data}`]);
+                    setEvents(prev => [...prev, { type: 'error', message: `Unparseable payload: ${data}` } as AgentEvent]);
                     return;
                 }
 
                 const type = payload.type ?? eventType;
                 const agent = payload.agent ?? 'agent';
                 let message = payload.message ?? '';
-                if (type === 'agent_dispatch' && payload.agents && payload.agents.length > 0) {
-                    message = `${message} (${payload.agents.join(', ')})`;
+                if (type === 'agent_dispatch' && payload.data?.agents && Array.isArray(payload.data?.agents)) {
+                    message = `${message} (${payload.data.agents.join(', ')})`;
                 }
                 if (type === 'result') {
-                    const urgency = payload.report?.overallUrgency;
+                    const urgency = payload.data?.report ? (payload.data.report as any)?.overallUrgency : undefined;
                     message = urgency ? `Report ready — highest urgency: ${urgency}` : 'Report ready';
                     setAgentPending(false);
                     if (!agentResultRequestedRef.current) {
                         agentResultRequestedRef.current = true;
-                        setAgentLogs(prev => [...prev, '[Stage] Building final report...']);
+                        setEvents(prev => [...prev, { type: 'agent_progress', agent: 'orchestrator', message: 'Building final report...' } as AgentEvent]);
                         setStreamPending(true);
                         runMutation(req);
                     }
                 }
 
-                setAgentLogs(prev => [...prev, `[${agent}:${type}] ${message}`]);
+                setEvents(prev => [...prev, { ...payload, type, agent, message } as AgentEvent]);
             });
             agentAbortRef.current = abortAgents;
         } else {
             // Rapid / Mechanism — standard POST
             if (agentAbortRef.current) { agentAbortRef.current(); agentAbortRef.current = null; }
-            setAgentLogs([]);
+            setEvents([]);
             setAgentPending(false);
             setStreamPending(false);
             runMutation(req);
@@ -362,14 +363,9 @@ export default function AnalyzePage() {
                     </div>
                 </div>
 
-                {(result.strategy === 'hypothesis' && agentLogs.length > 0) && (
+                {(result.strategy === 'hypothesis' && events.length > 0) && (
                     <div className="mt-8">
-                        <ThinkingStream
-                            isComplete={true}
-                            rawLogs={agentLogs}
-                            title="Agents Live"
-                            idleText="Waiting for agent stream..."
-                        />
+                        <AgentFeed events={events} />
                     </div>
                 )}
 
@@ -717,12 +713,7 @@ export default function AnalyzePage() {
                         <div className="flex items-center justify-between mb-4">
                             <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">Agents Live</span>
                         </div>
-                        <ThinkingStream
-                            isComplete={!agentPending}
-                            rawLogs={agentLogs.length > 0 ? agentLogs : undefined}
-                            title="Agents Live"
-                            idleText="Waiting for agent stream..."
-                        />
+                        <AgentFeed events={events} />
                     </div>
                 ) : (
                     <>
