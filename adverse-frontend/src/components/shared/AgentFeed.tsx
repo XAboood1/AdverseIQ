@@ -40,14 +40,14 @@ function AgentEventRow({ event }: { event: AgentEvent }) {
 
   const icon =
     event.type === 'agent_complete'
-      ? 'Ô£ô'
+      ? '✅'
       : event.type === 'agent_finding'
-        ? 'ÔÜá'
+        ? '⚠️'
         : event.type === 'agent_start'
-          ? 'Ôû║'
+          ? '▶'
           : event.type === 'agent_thinking'
-            ? 'Ôƒ│'
-            : '┬À';
+            ? '💭'
+            : '·';
 
   return (
     <div className="flex items-start gap-3 p-2 rounded-md hover:bg-white/[0.02] transition-colors border-l-2 border-cyan-500/40">
