@@ -105,4 +105,5 @@ AdverseIQ
 AdverseIQ is intended for **research, educational, and decision-support purposes**.
 
 It should **not** be used as a substitute for professional medical judgment, clinical guidelines, pharmacist review, or direct patient assessment. Medication changes should always be evaluated by a qualified healthcare professional.
-
+## Link
+* https://adverseiq.netlify.app/
